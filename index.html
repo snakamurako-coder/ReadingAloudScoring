@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>英語音読スコアリング</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;max-width:900px;margin:24px auto;padding:0 16px}
+    h1{font-size:1.35rem;margin:0 0 12px}
+    .card{border:1px solid #e5e7eb;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    label{font-weight:600;display:block;margin:8px 0 4px}
+    textarea,input,select{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:10px;font-size:1rem}
+    textarea.readonly{background:#f9fafb}
+    button{padding:10px 14px;border-radius:12px;border:1px solid #111827;background:#111827;color:#fff;font-weight:700;cursor:pointer}
+    button[disabled]{opacity:.5;cursor:not-allowed}
+    .row{display:grid;grid-template-columns:1fr;gap:12px}
+    .muted{color:#6b7280;font-size:.9rem}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    .pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-weight:700}
+    .flex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .score{font-size:2.2rem;font-weight:800}
+    .warn{color:#b45309}.ok{color:#059669}.bad{color:#dc2626}
+    .small{font-size:.85rem}
+    .list-inline{display:flex;gap:10px;flex-wrap:wrap}
+    .tag{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:740px){.grid-2{grid-template-columns:1fr}}
+
+    /* meter */
+    .meter-wrap{display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap}
+    .meter{position:relative;height:14px;min-width:260px;border-radius:999px;background:#eef2ff;overflow:hidden;border:1px solid #c7d2fe}
+    .meter-bar{position:absolute;height:100%;width:0%;background:linear-gradient(90deg,#60a5fa,#34d399);transition:width .08s linear}
+    .meter-label{font-variant-numeric:tabular-nums}
+
+    /* reference text */
+    .display-wrap{position:relative;padding-top:0}
+    .display-text{font-family:Georgia,"Times New Roman",serif;font-size:1.125rem;line-height:2.5;letter-spacing:.2px;height:24em;overflow:auto;resize:vertical}
+    .scroll-btns{position:absolute;right:4px;top:-56px;display:flex;gap:12px;z-index:2}
+    .scroll-btn{border:1px solid #cbd5e1;background:#fff;color:#111827;width:44px;height:44px;border-radius:12px;font-weight:800;font-size:1.25rem;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;align-items:center;justify-content:center}
+    .scroll-btn:active{transform:translateY(1px)}
+
+    .render-wrap{margin-top:8px}
+    .render-title{font-weight:700;margin:6px 0 2px}
+    .render-box{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff;min-height:56px}
+    .render-box .tok{padding:0 1px}
+    .tok.miss{color:#dc2626;font-weight:700}
+    .tok.add{color:#ca8a04;font-weight:700}
+
+    .inline-controls{display:flex;gap:8px;align-items:center}
+    .refresh-btn{background:#2563eb;border-color:#1e40af}
+
+    .statusbar{margin-top:8px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;font-size:.9rem}
+    .status-ok{border-color:#86efac;background:#f0fdf4}
+    .status-warn{border-color:#fde68a;background:#fffbeb}
+    .status-err{border-color:#fecaca;background:#fef2f2}
+
+    .miss-list{display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0}
+    .miss-chip{display:inline-flex; align-items:center; gap:.5rem; border:1px solid #d1d5db; border-radius:9999px; padding:.3rem .6rem; background:#fff}
+    .miss-word{font-weight:600}
+    .miss-btn{border:1px solid #d1d5db; background:#fff; border-radius:9999px; padding:.25rem .55rem; cursor:pointer}
+    .miss-btn[aria-pressed="true"]{outline:2px solid #111827}
+
+    /* === Shadowing UI === */
+    .shadowing-wrap{border:1px dashed #cbd5e1;border-radius:12px;padding:10px;margin-top:10px;background:#fafafa}
+    .shadowing-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .countdown{font-weight:800;letter-spacing:.5px}
+    .shadowing-note{color:#334155}
+  </style>
+</head>
+<body>
+  <h1>英語音読スコアリングシステム <span class="pill">for Chrome</span></h1>
+
+  <div class="card">
+    <div class="grid-2">
+      <div><label>生徒ID（4桁）</label><input id="studentId" maxlength="4" placeholder="1234" /></div>
+      <div><label>氏名</label><input id="studentName" placeholder="Yamada Taro" /></div>
+    </div>
+
+    <!-- 初期化ボタン -->
+    <div style="margin: 12px 0; padding: 12px; background: #f0f9ff; border-radius: 8px; border: 1px solid #bae6fd;">
+      <button id="initStructureBtn" type="button" style="background: #0284c7; border-color: #0284c7;">
+        🏗️ 必要なフォルダ・スプレッドシートを自動生成
+      </button>
+      <div id="initStatus" class="small muted" style="margin-top: 6px;"></div>
+    </div>
+
+    <label>学年＋科目（ブック）</label>
+    <div class="inline-controls">
+      <select id="bookSelect" style="flex:1 1 auto;"></select>
+      <button id="refreshBooksBtn" class="refresh-btn">🔄 再取得</button>
+    </div>
+
+    <label>単元（シート）</label>
+    <div class="inline-controls">
+      <select id="sheetSelect" disabled style="flex:1 1 auto;"></select>
+      <button id="refreshSheetsBtn" class="refresh-btn" disabled>🔄 再取得</button>
+    </div>
+
+    <label>取り組む英文</label>
+    <div class="inline-controls">
+      <select id="passageSelect" disabled style="flex:1 1 auto;"></select>
+      <button id="refreshPassagesBtn" class="refresh-btn" disabled>🔄 再取得</button>
+    </div>
+
+    <div class="flex" style="margin-top:8px">
+      <button id="startBtn" disabled>🎙️ 録音・認識開始</button>
+      <button id="stopBtn" disabled>⏹ 停止</button>
+      <label class="small" style="display:flex;align-items:center;gap:6px;margin-left:8px;">
+        <span>英語</span>
+        <select id="accentSelect">
+          <option value="en-US" selected>American</option>
+          <option value="en-GB">British</option>
+        </select>
+      </label>
+      <span id="status" class="muted" style="margin-left:40px;">未開始</span>
+    </div>
+
+    <div class="meter-wrap">
+      <div class="meter"><div id="meterBar" class="meter-bar"></div></div>
+      <div class="small muted meter-label">Level: <span id="meterVal">0%</span></div>
+      <div class="flex">
+        <button id="micCheckStartBtn">🎤 マイクチェック開始</button>
+        <button id="micCheckStopBtn" disabled>⏹ マイクチェック停止</button>
+      </div>
+    </div>
+
+    <div id="audioInfo" class="small muted" style="margin-top:6px;"></div>
+
+    <div id="previewWrap" class="small muted" style="display:none;">
+      <div>プレビュー（ローカル）</div>
+      <audio id="previewAudio" controls></audio>
+      <div id="previewMeta" class="small"></div>
+    </div>
+
+    <div id="submitStatus" class="statusbar">提出ステータス：未送信</div>
+
+    <label>【これを見ながら音読】</label>
+
+    <!-- 通常：表示用テキスト -->
+    <div id="displayTextWrap" class="display-wrap">
+      <div class="scroll-btns">
+        <button id="scrollUp" class="scroll-btn" aria-label="1行上へ">▲</button>
+        <button id="scrollDown" class="scroll-btn" aria-label="1行下へ">▼</button>
+      </div>
+      <textarea id="displayText" class="display-text readonly" readonly></textarea>
+    </div>
+
+    <!-- シャドイング用音声 UI（text_display が URL のとき表示） -->
+    <div id="shadowingWrap" class="shadowing-wrap" style="display:none;">
+      <div class="shadowing-row">
+        <label class="small">再生速度</label>
+        <select id="shadowRate" style="min-width:120px;">
+          <option value="1.2">1.2×</option>
+          <option value="1.1">1.1×</option>
+          <option value="1.0" selected>1.0×（標準）</option>
+          <option value="0.9">0.9×</option>
+          <option value="0.8">0.8×</option>
+        </select>
+        <button id="shadowStopBtn" type="button">⏹ 停止</button>
+        <span class="countdown small" id="shadowCountdown">—</span>
+      </div>
+      <div class="small shadowing-note" id="shadowNote">シャドイング用音声を事前ダウンロード中…</div>
+      <audio id="shadowAudio" preload="auto" style="display:none;"></audio>
+    </div>
+
+    <input type="hidden" id="fullText" />
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>あなたの読み上げた英語は以下のように判定されました。</label>
+        <textarea id="recognized" rows="6" class="mono readonly" readonly placeholder="自動文字起こし結果"></textarea>
+
+        <div class="render-wrap">
+          <div id="refCompareWrap" style="display:none;">
+            <div class="render-title small">参照テキスト（不足語＝赤）</div>
+            <div id="refHighlighted" class="render-box mono small"></div>
+          </div>
+          <div class="render-title small" style="margin-top:8px">あなたの読み上げ（過剰語＝黄）</div>
+          <div id="hypHighlighted" class="render-box mono small"></div>
+        </div>
+      </div>
+      <div>
+        <label>スコア</label>
+        <div id="score" class="score">—</div>
+        <div id="metrics" class="mono small"></div>
+        <div id="shadowingScoreLine" class="mono small" style="margin-top:6px;display:none;"></div>
+        <div class="list-inline small" style="margin-top:6px;">
+          <span id="missed" class="tag"></span>
+          <span id="added" class="tag"></span>
+        </div>
+        <div class="render-title small" style="margin-top:10px">不足語の練習</div>
+        <div id="missList" class="miss-list"></div>
+      </div>
+    </div>
+    <div class="flex">
+      <button id="saveBtn" type="button" disabled>💾 提出・報告</button>
+      <div id="submitStatusBottom" class="statusbar">提出ステータス：未送信</div>
+    </div>
+  </div> <!-- /.card -->
+
+  <script>
+    /* ========= 基本ユーティリティ（変更なし） ========= */
+    function normalize(t){return (t||"").toLowerCase().replace(/[“”"'’]/g,"").replace(/[^a-z0-9\s]/g," ").replace(/\s+/g," ").trim();}
+    function tokenize(t){t=normalize(t);return t? t.split(" "):[];}
+    function wer(r,h){
+      const R=tokenize(r),H=tokenize(h),N=R.length,M=H.length,dp=Array.from({length:N+1},()=>Array(M+1).fill(0));
+      for(let i=0;i<=N;i++)dp[i][0]=i; for(let j=0;j<=M;j++)dp[0][j]=j;
+      for(let i=1;i<=N;i++)for(let j=1;j<=M;j++){
+        const c=R[i-1]===H[j-1]?0:1;
+        dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+c);
+      }
+      const d=dp[N][M];return{wer:N?d/N:0,dist:d,refLen:N,hypLen:M};
+    }
+    function diffWordsWithIndex(r,h){
+      const R=tokenize(r),H=tokenize(h),n=R.length,m=H.length;
+      const l=Array.from({length:n+1},()=>Array(m+1).fill(0));
+      for(let i=1;i<=n;i++)for(let j=1;j<=m;j++)l[i][j]=(R[i-1]===H[j-1])?l[i-1][j-1]+1:Math.max(l[i-1][j],l[i][j-1]);
+      const matchR=new Set(), matchH=new Set(); let i=n,j=m;
+      while(i>0&&j>0){
+        if(R[i-1]===H[j-1]){matchR.add(i-1);matchH.add(j-1);i--;j--;}
+        else if(l[i-1][j]>=l[i][j-1]) i--; else j--;
+      }
+      const missedIdx=[], addedIdx=[];
+      for(let k=0;k<n;k++) if(!matchR.has(k)) missedIdx.push(k);
+      for(let k=0;k<m;k++) if(!matchH.has(k)) addedIdx.push(k);
+      return {R,H,missedIdx,addedIdx,missed:missedIdx.map(k=>R[k]),added:addedIdx.map(k=>H[k])};
+    }
+    function renderHighlighted(tokens, set, cls){
+      return tokens.map((tok,idx)=> set.has(idx)
+        ? `<span class="tok ${cls}">${escapeHtml(tok)}</span>`
+        : `<span class="tok">${escapeHtml(tok)}</span>`).join(' ');
+    }
+    function escapeHtml(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    function $(id){return document.getElementById(id);}
+
+    /* ========= スコア＆シャドイングスコア ========= */
+    function ceil(x){ return Math.ceil(x); }
+    function computeShadowingScore(baseScore, rate){
+      const raw = baseScore * rate;
+      const capped = Math.min(100, ceil(raw));
+      return capped;
+    }
+    function updateShadowingScoreLine(){
+      const base = Number($('score').textContent || 0);
+      const rate = Number($('shadowRate')?.value || 1.0);
+      if (!isFinite(base) || !isFinite(rate)) return;
+      const sscore = computeShadowingScore(base, rate);
+      const line = $('shadowingScoreLine');
+      line.style.display = 'block';
+      line.textContent = `シャドイングスコア = min(100, ceil(${base} × ${rate})) = ${sscore}`;
+    }
+
+    /* ========= miss words TTS ========= */
+    let ttsCurrentBtn=null, availableVoices=[];
+    function loadVoices(){ availableVoices = window.speechSynthesis ? speechSynthesis.getVoices() : []; }
+    if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+    function pickVoice(accent){
+      if(!availableVoices || availableVoices.length===0) return null;
+      const exact = availableVoices.find(v=>v.lang===currentAccent);
+      if(exact) return exact;
+      const base = currentAccent.split('-')[0];
+      const starts = availableVoices.find(v=>v.lang && v.lang.startsWith(base));
+      return starts || null;
+    }
+    function speakWord(word, btn){
+      const synth=window.speechSynthesis; synth.cancel();
+      if (ttsCurrentBtn && ttsCurrentBtn!==btn) ttsCurrentBtn.setAttribute('aria-pressed','false');
+      const u=new SpeechSynthesisUtterance(word);
+      u.lang=currentAccent;
+      const v=pickVoice(currentAccent);
+      if(v) u.voice=v;
+      u.rate=0.9;
+      btn.setAttribute('aria-pressed','true'); ttsCurrentBtn=btn;
+      u.onend=()=>{ if(ttsCurrentBtn===btn){ btn.setAttribute('aria-pressed','false'); ttsCurrentBtn=null; } };
+      u.onerror=()=>{ if(ttsCurrentBtn===btn){ btn.setAttribute('aria-pressed','false'); ttsCurrentBtn=null; } };
+      synth.speak(u);
+    }
+    function renderMissList(words){
+      const wrap = $('missList');
+      if(!wrap) return;
+      if(!words || words.length===0){
+        wrap.innerHTML = '<span class="muted">不足語はありません。</span>';
+        return;
+      }
+      wrap.innerHTML = '';
+      words.forEach(w=>{
+        const chip = document.createElement('div'); chip.className = 'miss-chip';
+        const label = document.createElement('div'); label.className = 'miss-word'; label.textContent = w;
+        const btn = document.createElement('button'); btn.type='button'; btn.className='miss-btn'; btn.textContent='🔊 再生';
+        btn.setAttribute('aria-pressed','false'); btn.setAttribute('aria-label', `${w} を再生`);
+        btn.addEventListener('click', ()=>{
+          if (ttsCurrentBtn === btn){ window.speechSynthesis.cancel(); btn.setAttribute('aria-pressed','false'); ttsCurrentBtn = null; return; }
+          speakWord(w, btn);
+        });
+        chip.appendChild(label); chip.appendChild(btn); wrap.appendChild(chip);
+      });
+    }
+
+    /* ========= WER計算＆描画 ========= */
+    function calcAndRender(){
+      const ref=$('fullText').value;
+      const h=$('recognized').value;
+      $('saveBtn').disabled = !h.trim();
+
+      if(!ref.trim()){
+        $('score').textContent='—';
+        $('metrics').textContent='';
+        $('missed').textContent='';
+        const H = tokenize(h);
+        $('hypHighlighted').innerHTML = H.map(t=>`<span class="tok">${escapeHtml(t)}</span>`).join(' ');
+        renderMissList([]);
+        return;
+      }
+
+      const {wer:rate,dist,refLen,hypLen}=wer(ref,h);
+      const score=Math.max(0,Math.round(100*(1-rate)));
+      const elScore=$('score');
+      elScore.textContent=`${score}`;
+      elScore.className='score '+(score>=85?'ok':score>=60?'warn':'bad');
+      $('metrics').textContent=`WER=${rate.toFixed(3)} (edit=${dist}, ref=${refLen}, hyp=${hypLen})`;
+
+      const d=diffWordsWithIndex(ref,h);
+      $('missed').textContent=d.missed.length?`不足: ${d.missed.slice(0,8).join(', ')}${d.missed.length>8?'…':''}`:'';
+      $('added').textContent=d.added.length?`過剰: ${d.added.slice(0,8).join(', ')}${d.added.length>8?'…':''}`:'';
+
+      $('refHighlighted').innerHTML = renderHighlighted(d.R,new Set(d.missedIdx),'miss');
+      $('hypHighlighted').innerHTML = renderHighlighted(d.H,new Set(d.addedIdx),'add');
+
+      renderMissList(d.missed);
+
+      // シャドイングスコアの行も更新（UIが表示されているとき）
+      if ($('shadowingWrap').style.display !== 'none') updateShadowingScoreLine();
+    }
+
+    /* ========= ASR/録音 ========= */
+    let currentAccent='en-US';
+    let recognition,keepRecognizing=false,listening=false,interim="",finalTxt="";
+    let mediaStream=null,mediaRecorder=null,recordedChunks=[],recordedBlob=null,recordedURL=null,audioMeta={id:"",url:"",mime:"",size:0};
+    let audioCtx=null,analyser=null,meterRAF=null,meterBuf=null; let micCheckStream=null;
+
+    function setupRecognition(){
+      const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+      if(!SR){ $('status').textContent='このブラウザは音声認識に未対応'; $('startBtn').disabled=true; return; }
+      recognition=new SR(); recognition.lang=currentAccent; recognition.continuous=true; recognition.interimResults=true;
+      recognition.onstart=()=>{listening=true; $('status').textContent='認識中…'};
+      recognition.onerror=(e)=>{$('status').textContent='エラー: '+e.error};
+      recognition.onend=()=>{ listening=false; if(keepRecognizing){ try{ recognition.start(); }catch(_){} } else { $('status').textContent='停止'; $('stopBtn').disabled=true; updateStartButtonState(); } };
+      recognition.onresult=(ev)=>{
+        interim=""; for(let i=ev.resultIndex;i<ev.results.length;i++){
+          const res=ev.results[i];
+          if(res.isFinal){ finalTxt+=(finalTxt?' ':'')+res[0].transcript.trim(); } else { interim+=res[0].transcript; }
+        }
+        const out=(finalTxt+' '+interim).trim();
+        $('recognized').value=out;
+        calcAndRender();
+      };
+    }
+    setupRecognition();
+
+    function applyAccentToRecognition(){
+      try {
+        if (recognition) {
+          recognition.onend = null;
+          try { recognition.stop(); } catch(_) {}
+        }
+      } finally {
+        setupRecognition(); // currentAccentを見て再生成
+      }
+    }
+
+    function startMeter(stream){
+      if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      const source=audioCtx.createMediaStreamSource(stream);
+      analyser=audioCtx.createAnalyser(); analyser.fftSize=1024; source.connect(analyser);
+      meterBuf=new Uint8Array(analyser.fftSize);
+      const bar=$('meterBar'), label=$('meterVal');
+      let frame=0;
+      function tick(){
+        analyser.getByteTimeDomainData(meterBuf);
+        if(frame%10===0){
+          let sum=0;
+          for(let i=0;i<meterBuf.length;i++){ const v=(meterBuf[i]-128)/128; sum+=v*v; }
+          const rms=Math.sqrt(sum/meterBuf.length);
+          const pct=Math.min(100,Math.max(0,Math.round(rms*120)));
+          bar.style.width=pct+'%'; label.textContent=pct+'%';
+        }
+        frame++; meterRAF=requestAnimationFrame(tick);
+      }
+      if(meterRAF) cancelAnimationFrame(meterRAF);
+      meterRAF=requestAnimationFrame(tick);
+    }
+    function stopMeter(){
+      if(meterRAF){ cancelAnimationFrame(meterRAF); meterRAF=null; }
+      $('meterBar').style.width='0%';
+      $('meterVal').textContent='0%';
+    }
+
+    async function startMicCheck(){
+      try{
+        if(micCheckStream){ return; }
+        micCheckStream=await navigator.mediaDevices.getUserMedia({audio:true});
+        startMeter(micCheckStream);
+        $('micCheckStartBtn').disabled=true; $('micCheckStopBtn').disabled=false;
+        $('status').textContent='マイクチェック中';
+      }catch(err){ $('audioInfo').textContent='マイクチェック失敗: '+err.message; }
+    }
+    function stopMicCheck(){
+      if(micCheckStream){ micCheckStream.getTracks().forEach(t=>t.stop()); micCheckStream=null; }
+      stopMeter();
+      $('micCheckStartBtn').disabled=false; $('micCheckStopBtn').disabled=true;
+      $('status').textContent='未開始';
+    }
+    $('micCheckStartBtn').addEventListener('click',startMicCheck);
+    $('micCheckStopBtn').addEventListener('click',stopMicCheck);
+
+    function resetPreview(){
+      if(recordedURL){ URL.revokeObjectURL(recordedURL); }
+      recordedURL=null; recordedBlob=null;
+      $('previewAudio').src='';
+      $('previewWrap').style.display='none';
+      $('previewMeta').textContent='';
+    }
+
+    async function startRecording(){
+      recordedChunks=[]; audioMeta={id:"",url:"",mime:"",size:0};
+      resetPreview();
+      if(micCheckStream){ stopMicCheck(); }
+      try{
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 },
+            sampleSize: { ideal: 16 }
+          }
+        });
+        startMeter(mediaStream);
+        const mime=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+        mediaRecorder=new MediaRecorder(mediaStream,{mimeType:mime});
+        mediaRecorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+        mediaRecorder.onstop=async ()=>{
+          stopMeter();
+          if(recordedChunks.length){
+            const blob=new Blob(recordedChunks,{type:mediaRecorder.mimeType});
+            recordedBlob=blob; audioMeta.mime=blob.type||''; audioMeta.size=blob.size||0;
+            if(recordedURL){ URL.revokeObjectURL(recordedURL); }
+            recordedURL=URL.createObjectURL(blob);
+            const audioEl=$('previewAudio'); audioEl.src=recordedURL;
+            $('previewWrap').style.display='block';
+            $('previewMeta').textContent=`形式: ${audioMeta.mime}・サイズ: ${Math.round(audioMeta.size/1024)} KB`;
+            $('audioInfo').textContent='未提出（ローカル）';
+          }
+          if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream=null; }
+        };
+        mediaRecorder.start();
+      }catch(err){ $('audioInfo').textContent='録音開始に失敗: '+err.message; }
+    }
+    function stopRecording(){
+      if(mediaRecorder && mediaRecorder.state!=='inactive'){ mediaRecorder.stop(); }
+      stopMeter();
+    }
+
+    /* ========= PassageBooks ローカルインデックス ========= */
+    const INDEX_KEY='pb:index:v2';
+    let PB_INDEX = loadIndex() || {books:[]};
+    function saveIndex(){ try{ localStorage.setItem(INDEX_KEY, JSON.stringify(PB_INDEX)); }catch(_){} }
+    function loadIndex(){ try{ return JSON.parse(localStorage.getItem(INDEX_KEY)||''); }catch(_){ return null; } }
+    function findBook(fileId){ return PB_INDEX.books.find(b=>b.fileId===fileId); }
+    function ensureBook(fileId,fileName){ let b=findBook(fileId); if(!b){ b={fileId,fileName,sheets:[]}; PB_INDEX.books.push(b);} else{ b.fileName=fileName;} return b; }
+    function ensureSheet(book,name){ let s=(book.sheets||[]).find(x=>x.name===name); if(!s){ s={name,passages:[]}; book.sheets.push(s);} return s; }
+
+    /* ========= 状態管理 ========= */
+    let currentBook={fileId:'',fileName:''};
+    let currentSheet='';
+    let currentPassage={id:'',title:''};
+
+    function updateStartButtonState(){
+      const sId=$('studentId').value.trim();
+      const sNm=$('studentName').value.trim();
+      const ok=!!(sId&&sNm&&currentBook.fileId&&currentSheet&&currentPassage.id);
+      if(!listening){ $('startBtn').disabled=!ok; }
+    }
+    ['studentId','studentName'].forEach(id=>{$(id).addEventListener('input',updateStartButtonState)});
+
+    /* ========= セレクト初期化 ========= */
+    function populateBooksFromIndex(){
+      const sel=$('bookSelect'); sel.innerHTML='';
+      const o0=document.createElement('option'); o0.value=''; o0.textContent='— 学年＋科目（ブック）を選択 —'; sel.appendChild(o0);
+      PB_INDEX.books.sort((a,b)=>a.fileName.localeCompare(b.fileName,'ja',{numeric:true})).forEach(b=>{
+        const o=document.createElement('option'); o.value=b.fileId; o.textContent=b.fileName; sel.appendChild(o);
+      });
+      sel.disabled=false;
+    }
+    function populateSheetsFromIndex(fileId){
+      const book=findBook(fileId);
+      const sel=$('sheetSelect'); sel.innerHTML='';
+      const o0=document.createElement('option'); o0.value=''; o0.textContent='— 単元（シート）を選択 —'; sel.appendChild(o0);
+      (book?.sheets||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,'ja',{numeric:true})).forEach(s=>{
+        const o=document.createElement('option'); o.value=s.name; o.textContent=s.name; sel.appendChild(o)
+      });
+      sel.disabled=!book;
+    }
+    function populatePassagesFromIndex(fileId,sheetName){
+      const book=findBook(fileId);
+      const sheet=book?.sheets?.find(s=>s.name===sheetName);
+      const sel=$('passageSelect'); sel.innerHTML='';
+      const o0=document.createElement('option'); o0.value=''; o0.textContent='— 取り組む英文を選択 —'; sel.appendChild(o0);
+      (sheet?.passages||[]).slice().sort((a,b)=> a.id.localeCompare(b.id, 'ja', { numeric:true }))
+        .forEach(p=>{
+          const o=document.createElement('option');
+          o.value=p.id; o.textContent = `${p.id}：${p.title || p.id}`;
+          sel.appendChild(o);
+        });
+      sel.disabled=!(sheet && sheet.passages.length);
+    }
+
+    /* ========= 初回ロード ========= */
+    populateBooksFromIndex();
+    $('bookSelect').disabled=true;
+    google.script.run
+      .withSuccessHandler(list=>{
+        PB_INDEX.books = (list||[]).map(b=>({fileId:b.fileId, fileName:b.fileName, sheets:[]}));
+        saveIndex();
+        populateBooksFromIndex();
+        $('bookSelect').disabled=false;
+      })
+      .withFailureHandler(()=>{ $('bookSelect').disabled=false; })
+      .getPassageBooks();
+
+    /* ========= 選択ハンドラ ========= */
+    $('bookSelect').addEventListener('change',(e)=>{
+      const fileId=e.target.value; const fileName=e.target.options[e.target.selectedIndex]?.text||'';
+      currentBook={fileId,fileName}; currentSheet=''; currentPassage={id:'',title:''};
+      $('displayText').value=''; $('fullText').value=''; $('refCompareWrap').style.display='none';
+      showTextMode(); // 表示モード初期化
+      calcAndRender(); updateStartButtonState();
+      $('refreshSheetsBtn').disabled=!fileId; $('refreshPassagesBtn').disabled=true;
+      populateSheetsFromIndex(fileId);
+      const book=findBook(fileId);
+      if(book && (!book.sheets || book.sheets.length===0)){
+        $('sheetSelect').disabled=true;
+        google.script.run.withSuccessHandler(list=>{
+          const b=ensureBook(fileId,fileName); b.sheets=(list||[]).map(name=>({name,passages:[]}));
+          saveIndex(); populateSheetsFromIndex(fileId);
+          $('sheetSelect').disabled=false;
+        }).withFailureHandler(()=>{ $('sheetSelect').disabled=false; }).getSheetsInBook(fileId);
+      }
+    });
+
+    $('sheetSelect').addEventListener('change',(e)=>{
+      const name=e.target.value; currentSheet=name; currentPassage={id:'',title:''};
+      $('displayText').value=''; $('fullText').value=''; $('refCompareWrap').style.display='none';
+      showTextMode();
+      calcAndRender(); updateStartButtonState();
+      $('refreshPassagesBtn').disabled=!name;
+      populatePassagesFromIndex(currentBook.fileId,name);
+      const book=findBook(currentBook.fileId); const sheet=book?.sheets?.find(s=>s.name===name);
+      if(sheet && (!sheet.passages || sheet.passages.length===0)){
+        $('passageSelect').disabled=true;
+        google.script.run.withSuccessHandler(list=>{
+          const b=ensureBook(currentBook.fileId,currentBook.fileName);
+          const s=ensureSheet(b,name); s.passages=(list||[]).map(x=>({id:x.id,title:x.title}));
+          saveIndex(); populatePassagesFromIndex(currentBook.fileId,name);
+          $('passageSelect').disabled=false;
+        }).withFailureHandler(()=>{ $('passageSelect').disabled=false; }).listPassageHeads(currentBook.fileId,name);
+      }
+    });
+
+    $('passageSelect').addEventListener('change',(e)=>{
+      const id = e.target.value;
+      currentPassage = { id: id, title: '' };
+
+      $('fullText').value=''; $('refCompareWrap').style.display='none';
+      showTextMode();
+      calcAndRender(); updateStartButtonState();
+      if(!id){ $('displayText').value=''; return; }
+
+      google.script.run.withSuccessHandler(res=>{
+        currentPassage.title=res.title||id;
+        if (res.isAudioUrl) {
+          // シャドイングモード：URL を使う
+          setupShadowingUIFromUrl(res.text);
+        } else {
+          // テキスト表示モード
+          showTextMode();
+          $('displayText').value = res.text || '';
+        }
+      }).getPassageText(currentBook.fileId, currentSheet, id, 'display');
+    });
+
+    $('refreshBooksBtn').addEventListener('click',()=>{
+      const btn=$('refreshBooksBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='更新中…';
+      google.script.run.withSuccessHandler(list=>{
+        PB_INDEX.books=(list||[]).map(b=>({fileId:b.fileId,fileName:b.fileName,sheets:[]}));
+        saveIndex(); populateBooksFromIndex(); btn.textContent=old; btn.disabled=false;
+      }).withFailureHandler(()=>{ btn.textContent=old; btn.disabled=false; }).getPassageBooks();
+    });
+    $('refreshSheetsBtn').addEventListener('click',()=>{
+      if(!currentBook.fileId) return; const btn=$('refreshSheetsBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='更新中…';
+      google.script.run.withSuccessHandler(list=>{
+        const b=ensureBook(currentBook.fileId,currentBook.fileName); b.sheets=(list||[]).map(name=>({name,passages:[]}));
+        saveIndex(); populateSheetsFromIndex(currentBook.fileId); btn.textContent=old; btn.disabled=false;
+      }).withFailureHandler(()=>{ btn.textContent=old; btn.disabled=false; }).getSheetsInBook(currentBook.fileId);
+    });
+    $('refreshPassagesBtn').addEventListener('click',()=>{
+      if(!currentBook.fileId||!currentSheet) return; const btn=$('refreshPassagesBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='更新中…';
+      google.script.run.withSuccessHandler(list=>{
+        const b=ensureBook(currentBook.fileId,currentBook.fileName); const s=ensureSheet(b,currentSheet);
+        s.passages=(list||[]).map(x=>({id:x.id,title:x.title}));
+        saveIndex(); populatePassagesFromIndex(currentBook.fileId,currentSheet); btn.textContent=old; btn.disabled=false;
+      }).withFailureHandler(()=>{ btn.textContent=old; btn.disabled=false; }).listPassageHeads(currentBook.fileId,currentSheet);
+    });
+
+    /* ========= スクロール ========= */
+    function getLineHeightPx(el){
+      const cs=window.getComputedStyle(el); const lh=cs.lineHeight;
+      if(lh.endsWith('px')) return parseFloat(lh);
+      const fs=parseFloat(cs.fontSize)||16; return fs*2.5;
+    }
+    $('scrollUp').addEventListener('click',()=>{ const el=$('displayText'); el.scrollTop=Math.max(0,el.scrollTop-getLineHeightPx(el)); });
+    $('scrollDown').addEventListener('click',()=>{ const el=$('displayText'); el.scrollTop=el.scrollTop+getLineHeightPx(el); });
+
+    /* ========= シャドイング：IndexedDB キャッシュ（最大2件・12時間） ========= */
+    const DB_NAME='shadow-audio-db'; const DB_STORE='audios'; const MAX_ITEMS=2; const TTL_MS=12*60*60*1000;
+
+    function idbOpen(){
+      return new Promise((resolve,reject)=>{
+        const req=indexedDB.open(DB_NAME,1);
+        req.onupgradeneeded=(e)=>{ const db=e.target.result; if(!db.objectStoreNames.contains(DB_STORE)){ db.createObjectStore(DB_STORE,{keyPath:'key'}); } };
+        req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error);
+      });
+    }
+    async function idbGet(key){
+      const db=await idbOpen();
+      return new Promise((resolve,reject)=>{
+        const tx=db.transaction(DB_STORE,'readonly'); const st=tx.objectStore(DB_STORE);
+        const r=st.get(key); r.onsuccess=()=>resolve(r.result||null); r.onerror=()=>reject(r.error);
+      });
+    }
+    async function idbPut(obj){
+      const db=await idbOpen();
+      return new Promise((resolve,reject)=>{
+        const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE);
+        const r=st.put(obj); r.onsuccess=()=>resolve(); r.onerror=()=>reject(r.error);
+      });
+    }
+    async function idbKeys(){
+      const db=await idbOpen();
+      return new Promise((resolve,reject)=>{
+        const tx=db.transaction(DB_STORE,'readonly'); const st=tx.objectStore(DB_STORE);
+        const r=st.getAll(); r.onsuccess=()=>resolve((r.result||[]).map(x=>x.key)); r.onerror=()=>reject(r.error);
+      });
+    }
+    async function idbDelete(key){
+      const db=await idbOpen();
+      return new Promise((resolve,reject)=>{
+        const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE);
+        const r=st.delete(key); r.onsuccess=()=>resolve(); r.onerror=()=>reject(r.error);
+      });
+    }
+    async function idbEvictLRUIfNeeded(){
+      const db=await idbOpen();
+      const items = await new Promise((resolve,reject)=>{
+        const tx=db.transaction(DB_STORE,'readonly'); const st=tx.objectStore(DB_STORE);
+        const r=st.getAll(); r.onsuccess=()=>resolve(r.result||[]); r.onerror=()=>reject(r.error);
+      });
+      const fresh = items.filter(x=> (Date.now()-x.savedAt) < TTL_MS);
+      const stale = items.filter(x=> (Date.now()-x.savedAt) >= TTL_MS);
+      // 期限切れ削除
+      await Promise.all(stale.map(s=>idbDelete(s.key)));
+      const survivors = fresh.sort((a,b)=> (a.lastUsed||0) - (b.lastUsed||0)); // LRU
+      while (survivors.length > MAX_ITEMS){
+        const victim=survivors.shift();
+        await idbDelete(victim.key);
+      }
+    }
+
+    function deriveDriveDownloadUrl(u){
+      // /file/d/<id>/ or ?id=<id>
+      try{
+        const m1 = u.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        const m2 = u.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        const fid = m1?.[1] || m2?.[1] || '';
+        if (fid) return `https://drive.google.com/uc?export=download&id=${fid}`;
+      }catch(_){}
+      return u;
+    }
+
+    let SHADOW_AUDIO_URL='';      // 元URL（キー）
+    let SHADOW_OBJECT_URL='';     // Blob URL
+    let SHADOW_RATE=1.0;
+
+    function showTextMode(){
+      $('displayTextWrap').style.display='block';
+      $('shadowingWrap').style.display='none';
+      $('shadowingScoreLine').style.display='none';
+      SHADOW_AUDIO_URL=''; if (SHADOW_OBJECT_URL){ URL.revokeObjectURL(SHADOW_OBJECT_URL); SHADOW_OBJECT_URL=''; }
+    }
+
+    async function setupShadowingUIFromUrl(url){
+      $('displayTextWrap').style.display='none';
+      $('shadowingWrap').style.display='block';
+      $('shadowNote').textContent='シャドイング用音声を事前ダウンロード中…';
+      $('shadowCountdown').textContent='—';
+
+      SHADOW_AUDIO_URL = url;
+      const dlUrl = deriveDriveDownloadUrl(url);
+
+      // IndexedDB キャッシュを見る
+      let entry = await idbGet(dlUrl);
+      if (entry && (Date.now()-entry.savedAt) < TTL_MS){
+        // キャッシュ命中
+        const blob = entry.blob ? new Blob([entry.blob], {type: entry.mime || 'audio/mpeg'}) : null;
+        if (blob){
+          if (SHADOW_OBJECT_URL) URL.revokeObjectURL(SHADOW_OBJECT_URL);
+          SHADOW_OBJECT_URL = URL.createObjectURL(blob);
+          $('shadowAudio').src = SHADOW_OBJECT_URL;
+          $('shadowNote').textContent='シャドイング用音声：準備完了（キャッシュ）';
+          // LRU 更新
+          entry.lastUsed = Date.now();
+          await idbPut(entry);
+          await idbEvictLRUIfNeeded();
+        } else {
+          entry = null; // 取り直し
+        }
+      }
+      if (!entry){
+        // ネットから取得
+        try{
+          const resp = await fetch(dlUrl, {credentials:'include'});
+          if(!resp.ok) throw new Error('HTTP '+resp.status);
+          const blob = await resp.blob();
+          if (SHADOW_OBJECT_URL) URL.revokeObjectURL(SHADOW_OBJECT_URL);
+          SHADOW_OBJECT_URL = URL.createObjectURL(blob);
+          $('shadowAudio').src = SHADOW_OBJECT_URL;
+          $('shadowNote').textContent='シャドイング用音声：準備完了';
+          // 保存（最大2件・12h）
+          await idbPut({key: dlUrl, mime: blob.type || '', blob: await blob.arrayBuffer(), savedAt: Date.now(), lastUsed: Date.now()});
+          await idbEvictLRUIfNeeded();
+        }catch(err){
+          $('shadowNote').textContent='音声の事前ダウンロードに失敗しました（共有設定をご確認ください）。';
+        }
+      }
+
+      // シャドイングスコア行は常に表示（スコア算出時だけ数値更新）
+      $('shadowingScoreLine').style.display='block';
+      updateShadowingScoreLine();
+    }
+
+    $('shadowRate').addEventListener('change', ()=>{
+      SHADOW_RATE = Number($('shadowRate').value || 1.0);
+      $('shadowAudio').playbackRate = SHADOW_RATE;
+      updateShadowingScoreLine();
+    });
+    $('shadowStopBtn').addEventListener('click', ()=>{
+      const a=$('shadowAudio'); try{ a.pause(); }catch(_){}
+      try{ a.currentTime = 0; }catch(_){}
+      $('shadowCountdown').textContent='—';
+    });
+
+    /* ========= 録音開始／停止ボタン ========= */
+    $('startBtn').addEventListener('click', async ()=>{
+      finalTxt=""; interim="";
+      $('recognized').value=''; $('refCompareWrap').style.display='none';
+      calcAndRender(); resetPreview();
+
+      keepRecognizing = true;
+      if(recognition && !listening){
+        recognition.start();
+        $('startBtn').disabled=true; $('stopBtn').disabled=false;
+      }
+      await startRecording();
+      $('status').textContent='録音・認識中…';
+
+      // もしシャドイング音声が準備済みなら、3秒カウントダウン後に再生
+      if ($('shadowingWrap').style.display !== 'none' && $('shadowAudio').src){
+        const cd=$('shadowCountdown'); let n=3;
+        cd.textContent='3'; const timer=setInterval(()=>{
+          n--; if(n>0){ cd.textContent=String(n); }
+          else {
+            clearInterval(timer);
+            cd.textContent='START!';
+            const a=$('shadowAudio');
+            try{
+              a.pause(); a.currentTime=0; a.playbackRate = Number($('shadowRate').value || 1.0);
+              a.play().catch(()=>{ /* ユーザー操作直後なので再生許可は通るはず */ });
+            }catch(_){}
+            // 1秒後に START! を消す
+            setTimeout(()=>{ if (cd.textContent==='START!') cd.textContent='—'; }, 1000);
+          }
+        },1000);
+      }
+    });
+
+    $('stopBtn').addEventListener('click', ()=>{
+      keepRecognizing = false;
+      if(recognition && listening){ try{ recognition.stop(); }catch(_){} }
+      stopRecording();
+      $('status').textContent='停止';
+      $('stopBtn').disabled=true;
+
+      // 参照テキスト（full）取得 → 採点
+      if(currentBook.fileId && currentSheet && currentPassage.id){
+        google.script.run.withSuccessHandler(res=>{
+          $('fullText').value = res.text || '';
+          $('refCompareWrap').style.display = 'block';
+          calcAndRender();
+        }).withFailureHandler(()=>{ calcAndRender(); })
+          .getPassageText(currentBook.fileId, currentSheet, currentPassage.id, 'full');
+      }else{
+        calcAndRender();
+      }
+      updateStartButtonState();
+    });
+
+    /* ========= 送信（キュー投入） ========= */
+    function genRequestId(){ return 'rq_'+Math.random().toString(36).slice(2)+Date.now().toString(36); }
+    function getStamp12(){
+      const d = new Date();
+      const pad2 = n => ('0'+n).slice(-2);
+      const y = String(d.getFullYear()).slice(-2);
+      return y + pad2(d.getMonth()+1) + pad2(d.getDate()) + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+    }
+    function setStatus(msg,cls){
+      ['submitStatus','submitStatusBottom'].forEach(id=>{
+        const el=$(id); if(!el) return;
+        el.textContent='提出ステータス：'+msg;
+        el.className='statusbar '+(cls||'');
+      });
+    }
+
+    $('saveBtn').addEventListener('click', async ()=>{
+      const sid = $('studentId').value.trim();
+      const sname = $('studentName').value.trim();
+      if(!sid || !sname){ alert('生徒IDと氏名は必須です'); return; }
+      if(!currentBook.fileId || !currentSheet || !currentPassage.id){
+        alert('ブック／シート／取り組む英文を選択してください'); return;
+      }
+
+      const requestId = genRequestId();
+      setStatus(`受付ID ${requestId} を発行しました。音声保存中…`,'status-warn');
+      const stamp12 = getStamp12();  // 音声とJSONで同一の12桁を共有
+
+      // variant は value(en-US/en-GB)ではなく表示ラベル（American/British）
+      const accentSel = $('accentSelect');
+      const variantLabel = accentSel ? (accentSel.options[accentSel.selectedIndex]?.text || '') : '';
+
+      // 追加：シャドイング関連
+      const shadowingMode = ($('shadowingWrap').style.display !== 'none');
+      const playbackRate = shadowingMode ? Number($('shadowRate').value || 1.0) : undefined;
+      const baseScore = Number($('score').textContent || 0);
+      const shadowingScore = shadowingMode ? computeShadowingScore(baseScore, playbackRate) : undefined;
+
+      const payload = {
+        requestId,
+        bookName: currentBook.fileName || '',
+        unitName: currentSheet || '',
+        passageLabel: currentPassage.id || '',
+        studentId4: sid,
+        studentName: sname,
+        recognizedText: $('recognized').value.trim(),
+        score: baseScore,
+        variant: variantLabel,                       // サーバ側で A/B 正規化
+        readWhileViewing: (shadowingMode ? (SHADOW_AUDIO_URL || '') : $('displayText').value.trim()),
+        timestamp12: stamp12,                        // ★ 音声と同一の12桁を付与
+      };
+      if (shadowingMode){
+        payload.playbackRate = playbackRate;
+        payload.shadowingScore = shadowingScore;
+      }
+
+      const btn = $('saveBtn'); const old = btn.textContent;
+      btn.disabled = true; btn.textContent = '送信中…';
+
+      try{
+        // 1) 録音があればアップロード → viewURL を取得
+        let audioViewUrl = '';
+        if (recordedBlob) {
+          $('audioInfo').textContent='音声アップロード中…';
+          const b64 = await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(recordedBlob); });
+          const audioRes = await new Promise((resolve,reject)=>{
+            google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)
+              .uploadAudioForSubmission(b64, recordedBlob.type, {
+                bookName: payload.bookName,
+                unitName: payload.unitName,
+                passageLabel: payload.passageLabel,
+                studentId4: payload.studentId4,
+                score: payload.score,
+                variantLabel: payload.variant,
+                timestamp12: stamp12
+              });
+          });
+          audioViewUrl = audioRes && audioRes.viewUrl ? audioRes.viewUrl : '';
+          if (audioViewUrl) $('audioInfo').innerHTML = `保存済み音声: <a href="${audioViewUrl}" target="_blank" rel="noopener">Google Drive</a>`;
+        }
+
+        // 2) JSON を最後に投入（音声URLを含める）
+        const finalPayload = { ...payload, audioViewUrl };
+        await new Promise((resolve,reject)=>{
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)
+            .enqueueSubmission(finalPayload);
+        });
+        setStatus(`受付完了：受付ID ${requestId}`,'status-ok');
+        alert(`受付完了！\n受付ID: ${requestId}`);
+      }catch(err){
+        setStatus(`受付に失敗：${(err&&err.message)||err}`,'status-err');
+        alert('受付に失敗しました：'+((err&&err.message)||err));
+      }finally{
+        btn.textContent = old; btn.disabled = false;
+      }
+    });
+
+    /* ========= アクセント変更 ========= */
+    const accentSel = $('accentSelect');
+    if(accentSel){
+      accentSel.addEventListener('change',(e)=>{ currentAccent = e.target.value || 'en-US'; applyAccentToRecognition(); });
+    }
+
+    /* ========= 初期化ボタン ========= */
+    $('initStructureBtn').addEventListener('click', ()=>{
+      const btn = $('initStructureBtn');
+      const status = $('initStatus');
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '生成中…';
+      status.textContent = '';
+      
+      google.script.run
+        .withSuccessHandler((result)=>{
+          const folders = result.foldersCreated || [];
+          const sheets = result.spreadsheetsCreated || [];
+          const spreadsheetId = result.spreadsheetId || '';
+          let msg = '';
+          if (folders.length > 0) {
+            msg += `フォルダ作成: ${folders.join(', ')}。`;
+          }
+          if (sheets.length > 0) {
+            msg += `スプレッドシート作成: ${sheets.join(', ')}。`;
+            if (spreadsheetId) {
+              msg += ` (ID: ${spreadsheetId} をスクリプトプロパティに保存済み)`;
+            }
+          }
+          if (msg === '') {
+            msg = '必要な構造は既に存在しています。';
+          } else {
+            msg += ' ブック一覧を更新してください。';
+            // ブック一覧を自動更新
+            setTimeout(()=>{
+              $('refreshBooksBtn').click();
+            }, 500);
+          }
+          status.textContent = msg;
+          status.style.color = '#059669';
+          btn.textContent = old;
+          btn.disabled = false;
+        })
+        .withFailureHandler((err)=>{
+          status.textContent = 'エラー: ' + (err.message || err);
+          status.style.color = '#dc2626';
+          btn.textContent = old;
+          btn.disabled = false;
+        })
+        .initializeRequiredStructure();
+    });
+
+    /* ========= シャドイング：開始時の再生速度反映 ========= */
+    SHADOW_RATE = Number($('shadowRate')?.value || 1.0);
+  </script>
+</body>
+</html>
