@@ -29,13 +29,13 @@ function initializeFoldersAndBooks_() {
   try {
     // 1. PassageBooksフォルダを作成（無ければ作成）
     getPassageBooksFolder_();
-    
+
     // 2. inbox_submissionsフォルダを作成（無ければ作成）
     getQueueFolder_();
-    
+
     // 3. Recordingsフォルダを作成（無ければ作成）
     getOrCreateRecordingsFolder_();
-    
+
     // 4. 管理ブックを初期化（スプレッドシートが存在しない場合はサンプルを生成）
     getPassageBooks();
   } catch (e) {
@@ -58,19 +58,19 @@ function getOrCreateRecordingsFolder_() {
  * @param {Object} meta - { bookName, unitName, passageLabel, studentId4, score, variantLabel, timestamp12 }
  * @return {{fileId:string, viewUrl:string, filename:string}}
  */
-function uploadAudioForSubmission(base64, mimeType, meta){
+function uploadAudioForSubmission(base64, mimeType, meta) {
   const folder = getOrCreateRecordingsFolder_();
 
   // A/B 正規化
-  function normalizeVariant_(v){
-    const s = (v||'').toLowerCase();
+  function normalizeVariant_(v) {
+    const s = (v || '').toLowerCase();
     if (s.startsWith('a')) return 'A';
     if (s.startsWith('b')) return 'B';
     return '';
   }
   // 安全名
   function safeName_(s) {
-    return (s==null?'':String(s))
+    return (s == null ? '' : String(s))
       .replace(/[\r\n]/g, ' ')
       .replace(/[\\/:*?"<>|#%\u0000-\u001F]/g, '_')
       .replace(/\s+/g, ' ')
@@ -92,7 +92,7 @@ function uploadAudioForSubmission(base64, mimeType, meta){
   const bytes = Utilities.base64Decode(String(base64).split(',')[1] || '');
   const blob = Utilities.newBlob(bytes, mimeType || 'audio/webm', filename);
   const file = folder.createFile(blob);
-  const viewUrl = 'https://drive.google.com/file/d/'+file.getId()+'/view';
+  const viewUrl = 'https://drive.google.com/file/d/' + file.getId() + '/view';
   return { fileId: file.getId(), viewUrl, filename };
 }
 
@@ -144,8 +144,8 @@ function validatePayload_(p) {
     missing.push('これを見ながら音読（readWhileViewing）');
   }
   // 追加：再生速度・シャドイングスコア（UIに表示された場合は必須扱い）
-  if ('playbackRate' in p && _s(p.playbackRate)==='') missing.push('再生速度（playbackRate）');
-  if ('shadowingScore' in p && _s(p.shadowingScore)==='') missing.push('シャドイングスコア（shadowingScore）');
+  if ('playbackRate' in p && _s(p.playbackRate) === '') missing.push('再生速度（playbackRate）');
+  if ('shadowingScore' in p && _s(p.shadowingScore) === '') missing.push('シャドイングスコア（shadowingScore）');
 
   if (missing.length) throw new Error('必須項目が不足: ' + missing.join(', '));
 
@@ -196,7 +196,7 @@ function buildFilename_(p, y12) {
 
 /***** ============== Public Server APIs ============== *****/
 // JSON受付（キュー保存のみ）
-function enqueueSubmission(payload){
+function enqueueSubmission(payload) {
   // 必須チェック
   validatePayload_(payload);
 
@@ -249,7 +249,7 @@ const PASSAGE_BOOKS_FOLDER_ID = ''; // 例: '1_xf7MLL4rQ8X04r_f5MNq5vdlvoY7ue1'
 const PASSAGE_BOOKS_FOLDER = 'PassageBooks';
 
 // PassageBooksフォルダを取得（無ければ作成）
-function getPassageBooksFolder_(){
+function getPassageBooksFolder_() {
   if (_s(PASSAGE_BOOKS_FOLDER_ID)) return DriveApp.getFolderById(PASSAGE_BOOKS_FOLDER_ID);
   const parent = getParentFolder_();
   const it = parent.getFoldersByName(PASSAGE_BOOKS_FOLDER);
@@ -257,31 +257,31 @@ function getPassageBooksFolder_(){
 }
 
 // サンプルスプレッドシートを生成
-function createSamplePassageBook_(){
+function createSamplePassageBook_() {
   const folder = getPassageBooksFolder_();
   const bookName = 'サンプルブック（学年＋科目名）';
   const sheetName = 'サンプルシート（単元名）';
-  
+
   // 既に同名のブックが存在するかチェック
   const existingFiles = folder.getFilesByName(bookName);
   if (existingFiles.hasNext()) {
     return existingFiles.next().getId();
   }
-  
+
   // 新しいスプレッドシートを作成
   const ss = SpreadsheetApp.create(bookName);
   const file = DriveApp.getFileById(ss.getId());
   folder.addFile(file);
   DriveApp.getRootFolder().removeFile(file); // ルートフォルダから削除
-  
+
   // デフォルトシートをリネーム
   const defaultSheet = ss.getSheets()[0];
   defaultSheet.setName(sheetName);
-  
+
   // 見出し行を設定
   const headerRow = [['id', 'title', 'text_full', 'text_display']];
   defaultSheet.getRange(1, 1, 1, 4).setValues(headerRow);
-  
+
   // サンプルデータを設定
   const sampleData = [
     [
@@ -303,66 +303,94 @@ function createSamplePassageBook_(){
       '"しかし、より大きな意味では、\n\n私たちはこの地を捧げたり、神聖にしたり、崇めたりすることはできません。\n\nここで戦った勇敢な人々―生存者も戦死者も―が、\n\n私たちの力の及ばないほど、この場所をすでに神聖なものにしています。\n\n私たちが果たすべきは、まだ残された大いなる課題に身を捧げることであり、\n\nこの国家が神のもとで自由の新たな誕生を迎えること、\n\nそして「人民の人民による人民のための政治」が地上から決して滅びないようにすることです。"'
     ]
   ];
-  
+
   defaultSheet.getRange(2, 1, sampleData.length, 4).setValues(sampleData);
-  
+
   // 列幅を調整
   defaultSheet.setColumnWidth(1, 50);  // id
   defaultSheet.setColumnWidth(2, 100); // title
   defaultSheet.setColumnWidth(3, 400); // text_full
   defaultSheet.setColumnWidth(4, 400); // text_display
-  
+
   return ss.getId();
 }
 
-function getPassageBooks(){
+function getPassageBooks() {
   const folder = getPassageBooksFolder_();
   const files = folder.getFiles();
   const out = [];
   let hasSheets = false;
-  
-  while(files.hasNext()){
+
+  while (files.hasNext()) {
     const f = files.next();
-    if (f.getMimeType() === MimeType.GOOGLE_SHEETS){
+    const mime = f.getMimeType();
+
+    if (mime === MimeType.GOOGLE_SHEETS) {
       out.push({ fileId: f.getId(), fileName: f.getName() });
       hasSheets = true;
+    } else if (mime === 'application/vnd.google-apps.shortcut') {
+      // ショートカット対応
+      try {
+        const targetId = f.getTargetId();
+        const target = DriveApp.getFileById(targetId);
+        if (target.getMimeType() === MimeType.GOOGLE_SHEETS) {
+          out.push({ fileId: targetId, fileName: f.getName() }); // 名前はショートカット名を使う
+          hasSheets = true;
+        }
+      } catch (e) { console.warn('Shortcut resolution failed', e); }
     }
   }
-  
+
   // スプレッドシートが存在しない場合はサンプルを生成
   if (!hasSheets) {
     const sampleId = createSamplePassageBook_();
     const sampleFile = DriveApp.getFileById(sampleId);
     out.push({ fileId: sampleId, fileName: sampleFile.getName() });
   }
-  
-  out.sort((a,b)=> a.fileName.localeCompare(b.fileName,'ja',{numeric:true}));
+
+  out.sort((a, b) => a.fileName.localeCompare(b.fileName, 'ja', { numeric: true }));
   return out;
 }
 
-function getSheetsInBook(fileId){
+function getSheetsInBook(fileId) {
   const ss = SpreadsheetApp.openById(fileId);
-  return ss.getSheets().map(s=> s.getName())
-    .sort((a,b)=> a.localeCompare(b,'ja',{numeric:true}));
+  return ss.getSheets().map(s => s.getName())
+    .sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
 }
 
-function _detectPassagesHeader(values){
-  for (var r = 0; r < values.length; r++){
-    var row = values[r].map(v=> _s(v).toLowerCase().replace(/\s+/g,''));
-    var idx = {
-      id: row.indexOf('id'),
-      title: row.indexOf('title'),
-      text_full: row.indexOf('text_full'),
-      text_display: row.indexOf('text_display')
-    };
-    if (idx.id >= 0 && idx.text_full >= 0 && idx.text_display >= 0){
+function _detectPassagesHeader(values) {
+  // 許容するヘッダー名のバリエーション（小文字・スペースなし）
+  const KEYS = {
+    id: ['id', 'ｉｄ', 'no', 'ｎｏ', '番号'],
+    title: ['title', 'タイトル', '題名', 'subject', 'unit'],
+    text_full: ['text_full', 'text', 'full', '本文', '全文', 'english', '英語'],
+    text_display: ['text_display', 'display', 'disp', '表示', '表示用', '表示テキスト', '穴埋め', 'hint']
+  };
+
+  for (var r = 0; r < values.length; r++) {
+    var row = values[r].map(v => _s(v).toLowerCase().replace(/\s+/g, ''));
+
+    // 各カラムのインデックスを探す
+    const idx = { id: -1, title: -1, text_full: -1, text_display: -1 };
+
+    for (let i = 0; i < row.length; i++) {
+      const cell = row[i];
+      if (idx.id < 0 && KEYS.id.includes(cell)) idx.id = i;
+      else if (idx.title < 0 && KEYS.title.includes(cell)) idx.title = i;
+      else if (idx.text_full < 0 && KEYS.text_full.includes(cell)) idx.text_full = i;
+      else if (idx.text_display < 0 && KEYS.text_display.includes(cell)) idx.text_display = i;
+    }
+
+    // 必須カラム（ID, 本文, 表示用）が見つかればOKとする（Titleは任意でも動くように調整可だが、一旦必須セットに含める）
+    if (idx.id >= 0 && (idx.text_full >= 0 || idx.text_display >= 0)) {
       return { headerRow: r, idx: idx };
     }
   }
-  return { headerRow: 0, idx: { id:0, title:1, text_full:2, text_display:3 } };
+  // 見つからない場合はデフォルト（A=ID, B=Title, C=Full, D=Disp）
+  return { headerRow: 0, idx: { id: 0, title: 1, text_full: 2, text_display: 3 } };
 }
 
-function listPassageHeads(fileId, sheetName){
+function listPassageHeads(fileId, sheetName) {
   const ss = SpreadsheetApp.openById(fileId);
   const sh = ss.getSheetByName(sheetName);
   if (!sh) throw new Error(`Sheet "${sheetName}" not found in "${ss.getName()}"`);
@@ -371,34 +399,31 @@ function listPassageHeads(fileId, sheetName){
   if (lastRow === 0 || lastCol === 0) return [];
   const headerScanRows = Math.min(50, lastRow);
   const headerBlock = sh.getRange(1, 1, headerScanRows, lastCol).getValues();
+
   const meta = _detectPassagesHeader(headerBlock);
   const dataStartRow = meta.headerRow + 2;
   const dataRows = lastRow - (meta.headerRow + 1);
   if (dataRows <= 0) return [];
+
   const MAX_ROWS = 50000;
   if (dataRows > MAX_ROWS) throw new Error(`Sheet too large: ${dataRows} rows (limit ${MAX_ROWS})`);
-  const I = meta.idx;
-  const colId = I.id + 1;
-  const colTitle = I.title + 1;
-  const colFull = I.text_full + 1;
-  const colDisp = I.text_display + 1;
 
-  const idVals = sh.getRange(dataStartRow, colId, dataRows, 1).getValues();
-  const titleVals = sh.getRange(dataStartRow, colTitle, dataRows, 1).getValues();
-  const fullVals = sh.getRange(dataStartRow, colFull, dataRows, 1).getValues();
-  const dispVals = sh.getRange(dataStartRow, colDisp, dataRows, 1).getValues();
+  const I = meta.idx;
+  // 列ごとに取る
+  function col(i) { return i >= 0 ? i + 1 : -1; }
+
+  const ids = col(I.id) > 0 ? sh.getRange(dataStartRow, col(I.id), dataRows, 1).getValues() : [];
+  const titles = col(I.title) > 0 ? sh.getRange(dataStartRow, col(I.title), dataRows, 1).getValues() : [];
 
   const out = [];
-  for (let i = 0; i < dataRows; i++){
-    const id = _s(idVals[i][0]);
-    const full = _s(fullVals[i][0]);
-    const disp = _s(dispVals[i][0]);
-    const title= _s(titleVals[i][0]);
+  for (let i = 0; i < dataRows; i++) {
+    const id = ids.length ? _s(ids[i][0]) : '';
     if (!id) continue;
-    if (!full && !disp) continue;  // ← ここを緩和（どちらか一方でもOK）
-    out.push({ id: id, title: title || id });
+
+    const title = (titles.length && titles[i]) ? _s(titles[i][0]) : id;
+    out.push({ id: id, title: title });
   }
-  out.sort((a,b)=> a.id.localeCompare(b.id,'ja',{numeric:true}));
+  out.sort((a, b) => a.id.localeCompare(b.id, 'ja', { numeric: true }));
   return out;
 }
 
@@ -407,28 +432,34 @@ function listPassageHeads(fileId, sheetName){
  * 返り値: { id, title, text, isAudioUrl?:boolean }
  *  - display指定時、text_display が URL かどうかを検出し isAudioUrl を付ける
  */
-function getPassageText(fileId, sheetName, id, which){
+function getPassageText(fileId, sheetName, id, which) {
   const ss = SpreadsheetApp.openById(fileId);
   const sh = ss.getSheetByName(sheetName);
   if (!sh) throw new Error(`Sheet "${sheetName}" not found in "${ss.getName()}"`);
   const values = sh.getDataRange().getValues();
   if (values.length === 0) throw new Error('Sheet empty');
+
   const meta = _detectPassagesHeader(values);
   const I = meta.idx;
-  const wantCol = (which === 'display') ? I.text_display : I.text_full; // display 指示で text_display
-  if (wantCol == null || wantCol < 0) throw new Error('Required column not found');
 
-  for (var r = meta.headerRow + 1; r < values.length; r++){
+  let wantIdx = (which === 'display') ? I.text_display : I.text_full;
+  if (wantIdx < 0) wantIdx = (which === 'display') ? I.text_full : I.text_display;
+
+  if (wantIdx < 0) throw new Error('Text column not found');
+
+  for (var r = meta.headerRow + 1; r < values.length; r++) {
     var row = values[r];
-    if (_s(row[I.id]) === _s(id)){
-      const text = _s(row[wantCol]);
-      const title = _s(row[I.title]) || _s(row[I.id]);
+    const rowId = (I.id >= 0 && row.length > I.id) ? _s(row[I.id]) : '';
+
+    if (rowId === _s(id)) {
+      const text = (row.length > wantIdx) ? _s(row[wantIdx]) : '';
+      const title = (I.title >= 0 && row.length > I.title) ? (_s(row[I.title]) || rowId) : rowId;
+
       if (which === 'display') {
-        // URL 判定（Google Driveリンクや拡張子 .mp3/.wav/.webm なども）
         const isUrl = /^https?:\/\//i.test(text);
-        return { id: _s(row[I.id]), title, text, isAudioUrl: !!isUrl };
+        return { id: rowId, title, text, isAudioUrl: !!isUrl };
       } else {
-        return { id: _s(row[I.id]), title, text };
+        return { id: rowId, title, text };
       }
     }
   }
