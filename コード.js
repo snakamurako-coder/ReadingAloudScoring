@@ -6,6 +6,8 @@ const RECORDINGS_DIR = 'Recordings';
 
 /***** ============== Web App Entry =============== *****/
 function doGet() {
+  // 初回起動時にフォルダと管理ブックを初期化
+  initializeFoldersAndBooks_();
   return HtmlService.createHtmlOutputFromFile('index');
 }
 
@@ -19,6 +21,27 @@ function getParentFolder_() {
   const parents = thisFile.getParents();
   if (!parents.hasNext()) throw new Error('親フォルダが見つかりません。');
   return parents.next();
+}
+
+/***** ================== Initialization ================== *****/
+// 初回起動時にすべてのフォルダと管理ブックを初期化
+function initializeFoldersAndBooks_() {
+  try {
+    // 1. PassageBooksフォルダを作成（無ければ作成）
+    getPassageBooksFolder_();
+    
+    // 2. inbox_submissionsフォルダを作成（無ければ作成）
+    getQueueFolder_();
+    
+    // 3. Recordingsフォルダを作成（無ければ作成）
+    getOrCreateRecordingsFolder_();
+    
+    // 4. 管理ブックを初期化（スプレッドシートが存在しない場合はサンプルを生成）
+    getPassageBooks();
+  } catch (e) {
+    // エラーが発生してもアプリは起動できるようにする
+    Logger.log('初期化エラー: ' + e.toString());
+  }
 }
 
 // 親フォルダ直下の Recordings を取得（無ければ作成）
