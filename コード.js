@@ -222,100 +222,24 @@ function countPendingInQueue_() {
 /***** ====== Read-only PassageBooks APIs ====== *****/
 // 設定：フォルダIDが分かるなら PASSAGE_BOOKS_FOLDER_ID に入れる。
 // 不明なら親フォルダ直下の "PassageBooks" を探します。
-// スクリプトプロパティからも読み取ります。
 const PASSAGE_BOOKS_FOLDER_ID = ''; // 例: '1_xf7MLL4rQ8X04r_f5MNq5vdlvoY7ue1'
 const PASSAGE_BOOKS_FOLDER = 'PassageBooks';
-const PROP_KEY_PASSAGE_BOOKS_FOLDER_ID = 'PASSAGE_BOOKS_FOLDER_ID';
-const PROP_KEY_PASSAGE_BOOKS_SPREADSHEET_IDS = 'PASSAGE_BOOKS_SPREADSHEET_IDS'; // カンマ区切り
-
-// スクリプトプロパティからPassageBooksフォルダIDを取得
-function getPassageBooksFolderIdFromProps_(){
-  const propId = PropertiesService.getScriptProperties().getProperty(PROP_KEY_PASSAGE_BOOKS_FOLDER_ID);
-  if (_s(propId)) return propId;
-  if (_s(PASSAGE_BOOKS_FOLDER_ID)) return PASSAGE_BOOKS_FOLDER_ID;
-  return '';
-}
-
-// スクリプトプロパティにPassageBooksフォルダIDを保存
-function setPassageBooksFolderIdToProps_(folderId){
-  if (_s(folderId)) {
-    PropertiesService.getScriptProperties().setProperty(PROP_KEY_PASSAGE_BOOKS_FOLDER_ID, folderId);
-  }
-}
-
-// スクリプトプロパティから生成済みスプレッドシートIDリストを取得
-function getPassageBooksSpreadsheetIdsFromProps_(){
-  const propIds = PropertiesService.getScriptProperties().getProperty(PROP_KEY_PASSAGE_BOOKS_SPREADSHEET_IDS);
-  if (!_s(propIds)) return [];
-  return propIds.split(',').map(id => _s(id)).filter(id => id);
-}
-
-// スクリプトプロパティにスプレッドシートIDを追加
-function addPassageBooksSpreadsheetIdToProps_(spreadsheetId){
-  if (!_s(spreadsheetId)) return;
-  const existing = getPassageBooksSpreadsheetIdsFromProps_();
-  if (!existing.includes(spreadsheetId)) {
-    existing.push(spreadsheetId);
-    PropertiesService.getScriptProperties().setProperty(
-      PROP_KEY_PASSAGE_BOOKS_SPREADSHEET_IDS,
-      existing.join(',')
-    );
-  }
-}
-
-// 親フォルダ直下の PassageBooks を取得（無ければ作成）
-function getOrCreatePassageBooksFolder_(){
-  const folderId = getPassageBooksFolderIdFromProps_();
-  if (folderId) {
-    try {
-      const folder = DriveApp.getFolderById(folderId);
-      return folder;
-    } catch (e) {
-      // IDが無効な場合は続行
-    }
-  }
-  const parent = getParentFolder_();
-  const it = parent.getFoldersByName(PASSAGE_BOOKS_FOLDER);
-  if (it.hasNext()) {
-    const folder = it.next();
-    // 初回取得時にスクリプトプロパティに保存
-    setPassageBooksFolderIdToProps_(folder.getId());
-    return folder;
-  }
-  // 存在しない場合は作成
-  const newFolder = parent.createFolder(PASSAGE_BOOKS_FOLDER);
-  setPassageBooksFolderIdToProps_(newFolder.getId());
-  return newFolder;
-}
 
 function getPassageBooksFolder_(){
-  return getOrCreatePassageBooksFolder_();
+  if (_s(PASSAGE_BOOKS_FOLDER_ID)) return DriveApp.getFolderById(PASSAGE_BOOKS_FOLDER_ID);
+  const parent = getParentFolder_();
+  const it = parent.getFoldersByName(PASSAGE_BOOKS_FOLDER);
+  if (!it.hasNext()) throw new Error('PassageBooks フォルダが見つかりません（PASSAGE_BOOKS_FOLDER_ID を設定するか、親直下に用意してください）。');
+  return it.next();
 }
 
 function getPassageBooks(){
   const folder = getPassageBooksFolder_();
   const files = folder.getFiles();
   const out = [];
-  const seenIds = new Set();
-  
-  // まず、スクリプトプロパティに保存されているスプレッドシートIDを優先的に追加
-  const propIds = getPassageBooksSpreadsheetIdsFromProps_();
-  for (const id of propIds) {
-    try {
-      const file = DriveApp.getFileById(id);
-      if (file.getMimeType() === MimeType.GOOGLE_SHEETS) {
-        out.push({ fileId: file.getId(), fileName: file.getName() });
-        seenIds.add(id);
-      }
-    } catch (e) {
-      // ファイルが見つからない場合はスキップ
-    }
-  }
-  
-  // フォルダ内の他のスプレッドシートも追加
   while(files.hasNext()){
     const f = files.next();
-    if (f.getMimeType() === MimeType.GOOGLE_SHEETS && !seenIds.has(f.getId())){
+    if (f.getMimeType() === MimeType.GOOGLE_SHEETS){
       out.push({ fileId: f.getId(), fileName: f.getName() });
     }
   }
@@ -416,107 +340,4 @@ function getPassageText(fileId, sheetName, id, which){
     }
   }
   throw new Error('Specified ID not found: ' + id + ' (sheet="' + sheetName + '")');
-}
-
-/***** ====== 自動生成機能 ====== *****/
-/**
- * 必要なフォルダとスプレッドシートを自動生成
- * @return {{foldersCreated: string[], spreadsheetsCreated: string[]}}
- */
-function initializeRequiredStructure(){
-  const result = { foldersCreated: [], spreadsheetsCreated: [] };
-  const parent = getParentFolder_();
-  
-  // 1. 必要なフォルダを確認・作成
-  const requiredFolders = [
-    { name: RECORDINGS_DIR, getter: getOrCreateRecordingsFolder_ },
-    { name: QUEUE_FOLDER_NAME, getter: getQueueFolder_ },
-    { name: PASSAGE_BOOKS_FOLDER, getter: getOrCreatePassageBooksFolder_ }
-  ];
-  
-  for (const { name, getter } of requiredFolders) {
-    const existing = parent.getFoldersByName(name);
-    if (!existing.hasNext()) {
-      getter(); // フォルダ作成
-      result.foldersCreated.push(name);
-    }
-  }
-  
-  // 2. PassageBooksフォルダ内にサンプルスプレッドシートを作成（存在しない場合）
-  const pbFolder = getOrCreatePassageBooksFolder_();
-  const existingSheets = pbFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
-  if (!existingSheets.hasNext()) {
-    // サンプルスプレッドシートを作成
-    const sampleSheet = createSamplePassageBook_('サンプル教材_Unit1');
-    const spreadsheetId = sampleSheet.getId();
-    // 生成したスプレッドシートのIDをスクリプトプロパティに保存
-    addPassageBooksSpreadsheetIdToProps_(spreadsheetId);
-    result.spreadsheetsCreated.push(sampleSheet.getName());
-    result.spreadsheetId = spreadsheetId; // IDも返却
-  }
-  
-  return result;
-}
-
-/**
- * サンプルPassageBookスプレッドシートを作成
- * @param {string} name - スプレッドシート名
- * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
- */
-function createSamplePassageBook_(name){
-  const ss = SpreadsheetApp.create(name);
-  const sheet = ss.getActiveSheet();
-  
-  // 列見出しを設定
-  const headers = ['id', 'title', 'text_full', 'text_display'];
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  
-  // サンプルデータを追加（1行目は見出し、2行目以降がデータ）
-  const sampleData = [
-    ['P001', 'Hello World', 'Hello world. This is a sample passage.', 'Hello world. This is a sample passage.'],
-    ['P002', 'Greetings', 'Good morning. How are you?', 'Good morning. How are you?']
-  ];
-  sheet.getRange(2, 1, sampleData.length, headers.length).setValues(sampleData);
-  
-  // フォーマット設定（見出し行を太字に）
-  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-  sheet.setColumnWidth(1, 80);  // id列
-  sheet.setColumnWidth(2, 150); // title列
-  sheet.setColumnWidth(3, 300); // text_full列
-  sheet.setColumnWidth(4, 300); // text_display列
-  
-  // ファイルをPassageBooksフォルダに移動
-  const file = DriveApp.getFileById(ss.getId());
-  const pbFolder = getOrCreatePassageBooksFolder_();
-  file.getParents().next().removeFile(file);
-  pbFolder.addFile(file);
-  
-  return ss;
-}
-
-/**
- * 指定されたスプレッドシートに新しいシートを作成（列見出し付き）
- * @param {string} fileId - スプレッドシートID
- * @param {string} sheetName - シート名
- * @return {boolean} 作成成功したかどうか
- */
-function createSheetWithHeaders(fileId, sheetName){
-  try {
-    const ss = SpreadsheetApp.openById(fileId);
-    // 既に同名のシートが存在する場合はスキップ
-    const existing = ss.getSheetByName(sheetName);
-    if (existing) return false;
-    
-    const sheet = ss.insertSheet(sheetName);
-    const headers = ['id', 'title', 'text_full', 'text_display'];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    sheet.setColumnWidth(1, 80);
-    sheet.setColumnWidth(2, 150);
-    sheet.setColumnWidth(3, 300);
-    sheet.setColumnWidth(4, 300);
-    return true;
-  } catch (e) {
-    throw new Error('シート作成に失敗: ' + e.message);
-  }
 }

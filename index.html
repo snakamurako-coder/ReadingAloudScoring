@@ -77,14 +77,6 @@
       <div><label>氏名</label><input id="studentName" placeholder="Yamada Taro" /></div>
     </div>
 
-    <!-- 初期化ボタン -->
-    <div style="margin: 12px 0; padding: 12px; background: #f0f9ff; border-radius: 8px; border: 1px solid #bae6fd;">
-      <button id="initStructureBtn" type="button" style="background: #0284c7; border-color: #0284c7;">
-        🏗️ 必要なフォルダ・スプレッドシートを自動生成
-      </button>
-      <div id="initStatus" class="small muted" style="margin-top: 6px;"></div>
-    </div>
-
     <label>学年＋科目（ブック）</label>
     <div class="inline-controls">
       <select id="bookSelect" style="flex:1 1 auto;"></select>
@@ -920,53 +912,6 @@
     if(accentSel){
       accentSel.addEventListener('change',(e)=>{ currentAccent = e.target.value || 'en-US'; applyAccentToRecognition(); });
     }
-
-    /* ========= 初期化ボタン ========= */
-    $('initStructureBtn').addEventListener('click', ()=>{
-      const btn = $('initStructureBtn');
-      const status = $('initStatus');
-      const old = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = '生成中…';
-      status.textContent = '';
-      
-      google.script.run
-        .withSuccessHandler((result)=>{
-          const folders = result.foldersCreated || [];
-          const sheets = result.spreadsheetsCreated || [];
-          const spreadsheetId = result.spreadsheetId || '';
-          let msg = '';
-          if (folders.length > 0) {
-            msg += `フォルダ作成: ${folders.join(', ')}。`;
-          }
-          if (sheets.length > 0) {
-            msg += `スプレッドシート作成: ${sheets.join(', ')}。`;
-            if (spreadsheetId) {
-              msg += ` (ID: ${spreadsheetId} をスクリプトプロパティに保存済み)`;
-            }
-          }
-          if (msg === '') {
-            msg = '必要な構造は既に存在しています。';
-          } else {
-            msg += ' ブック一覧を更新してください。';
-            // ブック一覧を自動更新
-            setTimeout(()=>{
-              $('refreshBooksBtn').click();
-            }, 500);
-          }
-          status.textContent = msg;
-          status.style.color = '#059669';
-          btn.textContent = old;
-          btn.disabled = false;
-        })
-        .withFailureHandler((err)=>{
-          status.textContent = 'エラー: ' + (err.message || err);
-          status.style.color = '#dc2626';
-          btn.textContent = old;
-          btn.disabled = false;
-        })
-        .initializeRequiredStructure();
-    });
 
     /* ========= シャドイング：開始時の再生速度反映 ========= */
     SHADOW_RATE = Number($('shadowRate')?.value || 1.0);
