@@ -70,7 +70,17 @@
         "command": "clasp deploy",
         "presentation": { "reveal": "always", "panel": "shared" }
       },
-  
+
+      // =====================================================================
+      // Push & Deploy（最新コードをデプロイ）
+      // =====================================================================
+      {
+        "label": "GAS: Push & Deploy (Latest Code)",
+        "type": "shell",
+        "command": "powershell -Command \"clasp push; clasp deploy\"",
+        "presentation": { "reveal": "always", "panel": "shared" }
+      },
+
       // =====================================================================
       // Dev WebApp 自動取得 → 開く
       // =====================================================================
