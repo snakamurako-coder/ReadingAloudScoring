@@ -195,8 +195,8 @@ function validatePayload_(p) {
     missing.push('これを見ながら音読（readWhileViewing）');
   }
   // 追加：再生速度・シャドイングスコア（UIに表示された場合は必須扱い）
-  if ('playbackRate' in p && _s(p.playbackRate) === '') missing.push('再生速度（playbackRate）');
-  if ('shadowingScore' in p && _s(p.shadowingScore) === '') missing.push('シャドイングスコア（shadowingScore）');
+  if ('playback_speed' in p && _s(p.playback_speed) === '') missing.push('再生速度（playback_speed）');
+  if ('shadowing_score' in p && _s(p.shadowing_score) === '') missing.push('シャドイングスコア（shadowing_score）');
 
   if (missing.length) throw new Error('必須項目が不足: ' + missing.join(', '));
 
@@ -206,13 +206,13 @@ function validatePayload_(p) {
   const n = Number(p.score);
   if (!isFinite(n)) throw new Error('スコア（score）は数値で指定してください。');
 
-  if ('shadowingScore' in p) {
-    const s = Number(p.shadowingScore);
+  if ('shadowing_score' in p) {
+    const s = Number(p.shadowing_score);
     if (!isFinite(s)) throw new Error('シャドイングスコアは数値で指定してください。');
   }
 }
 
-// JSONレコード（キー順はご指定順）＋拡張（playbackRate, shadowingScore, audioUrl）
+// JSONレコード（キー順はご指定順）＋拡張（playback_speed, shadowing_score, audioUrl）
 function buildJsonRecord_(p, tsISO) {
   const rec = {
     timestamp: tsISO,                 // 1) 提出日時
@@ -229,8 +229,9 @@ function buildJsonRecord_(p, tsISO) {
     version: 'queue-json-v1'
   };
   if (_s(p.audioViewUrl)) rec.audioUrl = _s(p.audioViewUrl);
-  if ('playbackRate' in p) rec.playbackRate = Number(p.playbackRate);
-  if ('shadowingScore' in p) rec.shadowingScore = Number(p.shadowingScore);
+  // シャドーイングに取り組んだ時専用のオプション項目
+  if ('playback_speed' in p) rec.playback_speed = Number(p.playback_speed);
+  if ('shadowing_score' in p) rec.shadowing_score = Number(p.shadowing_score);
   return rec;
 }
 
@@ -330,39 +331,43 @@ function createSamplePassageBook_() {
   const defaultSheet = ss.getSheets()[0];
   defaultSheet.setName(sheetName);
 
-  // 見出し行を設定
-  const headerRow = [['id', 'title', 'text_full', 'text_display']];
-  defaultSheet.getRange(1, 1, 1, 4).setValues(headerRow);
+  // 見出し行を設定（audio_file列を含む）
+  const headerRow = [['id', 'title', 'text_full', 'text_display', 'audio_file']];
+  defaultSheet.getRange(1, 1, 1, 5).setValues(headerRow);
 
-  // サンプルデータを設定
+  // サンプルデータを設定（audio_file列を含む）
   const sampleData = [
     [
       1,
       '通常',
       'But, in a larger sense, we cannot dedicate—we cannot consecrate—we cannot hallow—this ground. The brave men, living and dead, who struggled here, have consecrated it far above our poor power to add or detract. It is rather for us to be here dedicated to the great task remaining before us—that this nation, under God, shall have a new birth of freedom—and that government of the people, by the people, for the people, shall not perish from the earth.',
-      'But, in a larger sense, we cannot dedicate—we cannot consecrate—we cannot hallow—this ground. The brave men, living and dead, who struggled here, have consecrated it far above our poor power to add or detract. It is rather for us to be here dedicated to the great task remaining before us—that this nation, under God, shall have a new birth of freedom—and that government of the people, by the people, for the people, shall not perish from the earth.'
+      'But, in a larger sense, we cannot dedicate—we cannot consecrate—we cannot hallow—this ground. The brave men, living and dead, who struggled here, have consecrated it far above our poor power to add or detract. It is rather for us to be here dedicated to the great task remaining before us—that this nation, under God, shall have a new birth of freedom—and that government of the people, by the people, for the people, shall not perish from the earth.',
+      '' // audio_file列（空文字列）
     ],
     [
       2,
       '穴埋め',
       'But, in a larger sense, we cannot dedicate—we cannot consecrate—we cannot hallow—this ground. The brave men, living and dead, who struggled here, have consecrated it far above our poor power to add or detract. It is rather for us to be here dedicated to the great task remaining before us—that this nation, under God, shall have a new birth of freedom—and that government of the people, by the people, for the people, shall not perish from the earth.',
-      'But, in a (1      ) sense, we cannot (2      )—we cannot consecrate—we cannot (3      )—this ground. The brave men, living and dead, who struggled here, have consecrated it far above our (4      ) power to add or detract. It is rather for us to be here dedicated to the great task (5      ) before us—that this nation, under God, shall have a new (6      ) of freedom—and that government of the people, by the people, for the people, shall not (7      ) from the earth.'
+      'But, in a (1      ) sense, we cannot (2      )—we cannot consecrate—we cannot (3      )—this ground. The brave men, living and dead, who struggled here, have consecrated it far above our (4      ) power to add or detract. It is rather for us to be here dedicated to the great task (5      ) before us—that this nation, under God, shall have a new (6      ) of freedom—and that government of the people, by the people, for the people, shall not (7      ) from the earth.',
+      '' // audio_file列（空文字列）
     ],
     [
       3,
       'バクトラ',
       '"But, in a larger sense, \n\nwe cannot dedicate—we cannot consecrate—we cannot hallow—this ground. \n\nThe brave men, living and dead, who struggled here, \n\nhave consecrated it far above our poor power to add or detract. \n\nIt is rather for us to be here dedicated to the great task remaining before us—\n\nthat this nation, under God, shall have a new birth of freedom—\n\nand that government of the people, by the people, for the people, shall not perish from the earth."',
-      '"しかし、より大きな意味では、\n\n私たちはこの地を捧げたり、神聖にしたり、崇めたりすることはできません。\n\nここで戦った勇敢な人々―生存者も戦死者も―が、\n\n私たちの力の及ばないほど、この場所をすでに神聖なものにしています。\n\n私たちが果たすべきは、まだ残された大いなる課題に身を捧げることであり、\n\nこの国家が神のもとで自由の新たな誕生を迎えること、\n\nそして「人民の人民による人民のための政治」が地上から決して滅びないようにすることです。"'
+      '"しかし、より大きな意味では、\n\n私たちはこの地を捧げたり、神聖にしたり、崇めたりすることはできません。\n\nここで戦った勇敢な人々―生存者も戦死者も―が、\n\n私たちの力の及ばないほど、この場所をすでに神聖なものにしています。\n\n私たちが果たすべきは、まだ残された大いなる課題に身を捧げることであり、\n\nこの国家が神のもとで自由の新たな誕生を迎えること、\n\nそして「人民の人民による人民のための政治」が地上から決して滅びないようにすることです。"',
+      '' // audio_file列（空文字列）
     ]
   ];
 
-  defaultSheet.getRange(2, 1, sampleData.length, 4).setValues(sampleData);
+  defaultSheet.getRange(2, 1, sampleData.length, 5).setValues(sampleData);
 
   // 列幅を調整
   defaultSheet.setColumnWidth(1, 50);  // id
   defaultSheet.setColumnWidth(2, 100); // title
   defaultSheet.setColumnWidth(3, 400); // text_full
   defaultSheet.setColumnWidth(4, 400); // text_display
+  defaultSheet.setColumnWidth(5, 200); // audio_file
 
   return ss.getId();
 }
