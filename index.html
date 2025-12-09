@@ -511,9 +511,13 @@
         <div class="flex-center flex-wrap">
           <label style="margin:0;">Speed:</label>
           <select id="shadowRate" style="width:auto;">
-            <option value="0.8">0.8x (Slow)</option>
+            <option value="0.6">0.6x</option>
+            <option value="0.7">0.7x</option>
+            <option value="0.8">0.8x</option>
+            <option value="0.9">0.9x</option>
             <option value="1.0" selected>1.0x (Normal)</option>
-            <option value="1.2">1.2x (Fast)</option>
+            <option value="1.1">1.1x</option>
+            <option value="1.2">1.2x</option>
           </select>
           <span class="countdown" id="shadowCountdown">—</span>
           <button id="shadowStopBtn" class="secondary" style="font-size:0.8rem;">Stop Audio</button>
@@ -819,25 +823,52 @@
           $('previewAudio').src = url;
           $('previewWrap').style.display = 'block';
         };
+        
+        // 録音開始
         mediaRecorder.start();
-
         recognition.start();
         $('startBtn').disabled = true;
         $('stopBtn').disabled = false;
 
-        // Shadowing Auto-play
+        // Shadowing Mode: audio_file列から音声ファイルが設定されている場合
         if ($('shadowingWrap').style.display !== 'none') {
           const audio = $('shadowAudio');
           if (audio.src) {
-            $('shadowCountdown').textContent = '3';
-            setTimeout(() => $('shadowCountdown').textContent = '2', 1000);
-            setTimeout(() => $('shadowCountdown').textContent = '1', 2000);
+            // 録音開始後2秒で音声再生開始
             setTimeout(() => {
-              $('shadowCountdown').textContent = 'GO';
               audio.playbackRate = Number($('shadowRate').value);
               audio.currentTime = 0;
               audio.play();
-            }, 3000);
+              $('shadowCountdown').textContent = '再生中...';
+              
+              // 音声再生終了後5秒で録音停止
+              audio.onended = () => {
+                $('shadowCountdown').textContent = '5';
+                setTimeout(() => {
+                  $('shadowCountdown').textContent = '4';
+                  setTimeout(() => {
+                    $('shadowCountdown').textContent = '3';
+                    setTimeout(() => {
+                      $('shadowCountdown').textContent = '2';
+                      setTimeout(() => {
+                        $('shadowCountdown').textContent = '1';
+                        setTimeout(() => {
+                          // 録音停止
+                          keepRecognizing = false;
+                          if (recognition) recognition.stop();
+                          if (mediaRecorder && mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                          }
+                          $('shadowCountdown').textContent = '停止';
+                          $('startBtn').disabled = false;
+                          $('stopBtn').disabled = true;
+                        }, 1000);
+                      }, 1000);
+                    }, 1000);
+                  }, 1000);
+                }, 1000);
+              };
+            }, 2000);
           }
         }
 
@@ -848,7 +879,10 @@
       keepRecognizing = false;
       if (recognition) recognition.stop();
       if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-      $('shadowAudio').pause();
+      const audio = $('shadowAudio');
+      audio.pause();
+      audio.onended = null; // イベントハンドラをクリア
+      $('shadowCountdown').textContent = '—';
     };
 
     $('micCheckStartBtn').onclick = startMicCheck;
@@ -1004,8 +1038,19 @@
           // We need "full" text for scoring diff, and "display" text for reading.
           // Let's assume for now we use 'display' call for UI.
 
-          if (res.isAudioUrl) {
-            // Shadowing Mode
+          // audio_file列から音声ファイルが指定されている場合
+          if (res.audioFile) {
+            // Shadowing Mode (audio_file列から)
+            $('displayTextWrap').style.display = 'none';
+            $('shadowingWrap').style.display = 'block';
+
+            // Audio Setup
+            const a = $('shadowAudio');
+            a.src = res.audioFile;
+            a.load(); // 音声ファイルを読み込み
+            $('shadowNote').textContent = '音声ファイルが設定されています。録音開始後、2秒後に音声が再生されます。';
+          } else if (res.isAudioUrl) {
+            // Shadowing Mode (text_displayがURLの場合 - 既存の動作)
             $('displayTextWrap').style.display = 'none';
             $('shadowingWrap').style.display = 'block';
 
@@ -1013,7 +1058,8 @@
             const a = $('shadowAudio');
             const dlUrl = res.text.replace(/\/file\/d\/(.+)\/.*/, '/uc?export=download&id=$1');
             a.src = dlUrl;
-            // Note: In real app, consider drive download limit / cors.
+            a.load();
+            $('shadowNote').textContent = '音声URLが設定されています。録音開始後、2秒後に音声が再生されます。';
           } else {
             // Text Mode
             $('displayTextWrap').style.display = 'block';

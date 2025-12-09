@@ -3,6 +3,8 @@
 const QUEUE_FOLDER_NAME = 'inbox_submissions'; // 親フォルダ直下
 // 音声保存先（親フォルダ直下）
 const RECORDINGS_DIR = 'Recordings';
+// 音声ファイルフォルダ（親フォルダ直下）
+const AUDIO_FILE_DIR = 'audio_file';
 
 /***** ============== Web App Entry =============== *****/
 function doGet() {
@@ -36,7 +38,10 @@ function initializeFoldersAndBooks_() {
     // 3. Recordingsフォルダを作成（無ければ作成）
     getOrCreateRecordingsFolder_();
 
-    // 4. 管理ブックを初期化（スプレッドシートが存在しない場合はサンプルを生成）
+    // 4. audio_fileフォルダを作成（無ければ作成）
+    getOrCreateAudioFileFolder_();
+
+    // 5. 管理ブックを初期化（スプレッドシートが存在しない場合はサンプルを生成）
     getPassageBooks();
   } catch (e) {
     // エラーが発生してもアプリは起動できるようにする
@@ -49,6 +54,13 @@ function getOrCreateRecordingsFolder_() {
   const parent = getParentFolder_();
   const it = parent.getFoldersByName(RECORDINGS_DIR);
   return it.hasNext() ? it.next() : parent.createFolder(RECORDINGS_DIR);
+}
+
+// 親フォルダ直下の audio_file を取得（無ければ作成）
+function getOrCreateAudioFileFolder_() {
+  const parent = getParentFolder_();
+  const it = parent.getFoldersByName(AUDIO_FILE_DIR);
+  return it.hasNext() ? it.next() : parent.createFolder(AUDIO_FILE_DIR);
 }
 
 /**
@@ -404,14 +416,15 @@ function _detectPassagesHeader(values) {
     id: ['id', 'ｉｄ', 'no', 'ｎｏ', '番号'],
     title: ['title', 'タイトル', '題名', 'subject', 'unit'],
     text_full: ['text_full', 'text', 'full', '本文', '全文', 'english', '英語'],
-    text_display: ['text_display', 'display', 'disp', '表示', '表示用', '表示テキスト', '穴埋め', 'hint']
+    text_display: ['text_display', 'display', 'disp', '表示', '表示用', '表示テキスト', '穴埋め', 'hint'],
+    audio_file: ['audio_file', 'audiofile', 'audio', '音声', '音声ファイル', 'sound', 'soundfile']
   };
 
   for (var r = 0; r < values.length; r++) {
     var row = values[r].map(v => _s(v).toLowerCase().replace(/\s+/g, ''));
 
     // 各カラムのインデックスを探す
-    const idx = { id: -1, title: -1, text_full: -1, text_display: -1 };
+    const idx = { id: -1, title: -1, text_full: -1, text_display: -1, audio_file: -1 };
 
     for (let i = 0; i < row.length; i++) {
       const cell = row[i];
@@ -419,6 +432,7 @@ function _detectPassagesHeader(values) {
       else if (idx.title < 0 && KEYS.title.includes(cell)) idx.title = i;
       else if (idx.text_full < 0 && KEYS.text_full.includes(cell)) idx.text_full = i;
       else if (idx.text_display < 0 && KEYS.text_display.includes(cell)) idx.text_display = i;
+      else if (idx.audio_file < 0 && KEYS.audio_file.includes(cell)) idx.audio_file = i;
     }
 
     // 必須カラム（ID, 本文, 表示用）が見つかればOKとする（Titleは任意でも動くように調整可だが、一旦必須セットに含める）
@@ -427,7 +441,7 @@ function _detectPassagesHeader(values) {
     }
   }
   // 見つからない場合はデフォルト（A=ID, B=Title, C=Full, D=Disp）
-  return { headerRow: 0, idx: { id: 0, title: 1, text_full: 2, text_display: 3 } };
+  return { headerRow: 0, idx: { id: 0, title: 1, text_full: 2, text_display: 3, audio_file: -1 } };
 }
 
 function listPassageHeads(fileId, sheetName) {
@@ -468,9 +482,31 @@ function listPassageHeads(fileId, sheetName) {
 }
 
 /**
+ * ファイル名からGoogleドライブのダウンロードURLを解決
+ * @param {string} filename - 音声ファイル名（webm, mp3, wav対応）
+ * @return {string} - ダウンロードURL、見つからない場合は空文字列
+ */
+function resolveAudioFileUrl_(filename) {
+  if (!filename || !_s(filename)) return '';
+  
+  const folder = getOrCreateAudioFileFolder_();
+  const files = folder.getFilesByName(filename);
+  
+  if (files.hasNext()) {
+    const file = files.next();
+    const fileId = file.getId();
+    // GoogleドライブのダウンロードURL形式に変換
+    return 'https://drive.google.com/uc?export=download&id=' + fileId;
+  }
+  
+  return '';
+}
+
+/**
  * which: 'display' or 'full'
- * 返り値: { id, title, text, isAudioUrl?:boolean }
+ * 返り値: { id, title, text, isAudioUrl?:boolean, audioFile?:string }
  *  - display指定時、text_display が URL かどうかを検出し isAudioUrl を付ける
+ *  - audio_file列が存在する場合、audioFileプロパティにURLまたはファイル名を設定
  */
 function getPassageText(fileId, sheetName, id, which) {
   const ss = SpreadsheetApp.openById(fileId);
@@ -494,12 +530,38 @@ function getPassageText(fileId, sheetName, id, which) {
     if (rowId === _s(id)) {
       const text = (row.length > wantIdx) ? _s(row[wantIdx]) : '';
       const title = (I.title >= 0 && row.length > I.title) ? (_s(row[I.title]) || rowId) : rowId;
+      
+      // audio_file列の値を取得
+      let audioFile = '';
+      if (I.audio_file >= 0 && row.length > I.audio_file) {
+        const audioFileValue = _s(row[I.audio_file]);
+        if (audioFileValue) {
+          // GoogleドライブURLかどうかを判定
+          if (/^https?:\/\//i.test(audioFileValue)) {
+            // GoogleドライブURLの場合、ダウンロードURL形式に変換
+            const match = audioFileValue.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+            if (match) {
+              audioFile = 'https://drive.google.com/uc?export=download&id=' + match[1];
+            } else {
+              // すでにダウンロードURL形式の場合
+              audioFile = audioFileValue;
+            }
+          } else {
+            // ファイル名の場合、audio_fileフォルダから検索
+            audioFile = resolveAudioFileUrl_(audioFileValue);
+          }
+        }
+      }
 
       if (which === 'display') {
         const isUrl = /^https?:\/\//i.test(text);
-        return { id: rowId, title, text, isAudioUrl: !!isUrl };
+        const result = { id: rowId, title, text, isAudioUrl: !!isUrl };
+        if (audioFile) result.audioFile = audioFile;
+        return result;
       } else {
-        return { id: rowId, title, text };
+        const result = { id: rowId, title, text };
+        if (audioFile) result.audioFile = audioFile;
+        return result;
       }
     }
   }
