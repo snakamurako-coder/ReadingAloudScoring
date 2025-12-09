@@ -501,10 +501,59 @@ function resolveAudioFileUrl_(filename) {
     const file = files.next();
     const fileId = file.getId();
     // GoogleドライブのダウンロードURL形式に変換
-    return 'https://drive.google.com/uc?export=download&id=' + fileId;
+    return 'https://drive.google.com/uc?export=view&id=' + fileId;
   }
   
   return '';
+}
+
+/**
+ * ファイル名から音声ファイルをBase64エンコードしてDataURL形式で取得
+ * @param {string} filename - 音声ファイル名（webm, mp3, wav対応）
+ * @return {string|null} - DataURL形式（data:audio/xxx;base64,...）、見つからない場合はnull
+ */
+function getAudioFileAsDataUrl(filename) {
+  if (!filename || !_s(filename)) return null;
+  
+  try {
+    const folder = getOrCreateAudioFileFolder_();
+    const files = folder.getFilesByName(filename);
+    
+    if (!files.hasNext()) {
+      Logger.log('getAudioFileAsDataUrl: ファイルが見つかりません: ' + filename);
+      return null;
+    }
+    
+    const file = files.next();
+    const blob = file.getBlob();
+    const mimeType = blob.getContentType();
+    
+    // 音声ファイルのMIMEタイプを確認
+    if (!mimeType || !mimeType.startsWith('audio/')) {
+      Logger.log('getAudioFileAsDataUrl: 音声ファイルではありません: ' + mimeType);
+      return null;
+    }
+    
+    // ファイルサイズチェック（10MB制限）
+    const fileSizeBytes = blob.getBytes().length;
+    const fileSizeMB = fileSizeBytes / (1024 * 1024);
+    if (fileSizeMB > 10) {
+      Logger.log('getAudioFileAsDataUrl: ファイルサイズが大きすぎます: ' + fileSizeMB.toFixed(2) + 'MB');
+      // 大きすぎる場合は従来のURL方式にフォールバック
+      return 'https://drive.google.com/uc?export=view&id=' + file.getId();
+    }
+    
+    // Base64エンコード
+    const base64 = Utilities.base64Encode(blob.getBytes());
+    const dataUrl = 'data:' + mimeType + ';base64,' + base64;
+    
+    Logger.log('getAudioFileAsDataUrl: 成功 - ' + filename + ' (' + fileSizeMB.toFixed(2) + 'MB)');
+    return dataUrl;
+    
+  } catch (e) {
+    Logger.log('getAudioFileAsDataUrl: エラー - ' + e.toString());
+    return null;
+  }
 }
 
 /**
@@ -546,14 +595,18 @@ function getPassageText(fileId, sheetName, id, which) {
             // GoogleドライブURLの場合、ダウンロードURL形式に変換
             const match = audioFileValue.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
             if (match) {
-              audioFile = 'https://drive.google.com/uc?export=download&id=' + match[1];
+              audioFile = 'https://drive.google.com/uc?export=view&id=' + match[1];
             } else {
               // すでにダウンロードURL形式の場合
               audioFile = audioFileValue;
             }
           } else {
-            // ファイル名の場合、audio_fileフォルダから検索
-            audioFile = resolveAudioFileUrl_(audioFileValue);
+            // ファイル名の場合、Base64エンコードしてDataURL形式で取得
+            audioFile = getAudioFileAsDataUrl(audioFileValue);
+            // Base64エンコードに失敗した場合は従来のURL方式にフォールバック
+            if (!audioFile || !audioFile.startsWith('data:')) {
+              audioFile = resolveAudioFileUrl_(audioFileValue);
+            }
           }
         }
       }
