@@ -161,7 +161,7 @@ function ensureUniqueFilename_(folder, filename) {
     counter++;
   } while (folder.getFilesByName(uniqueName).hasNext() && counter < 10000);
   
-  if (counter >= 10000) {
+  if (counter > 10000) {
     throw new Error('ファイル名の生成に失敗しました（重複が多すぎます）');
   }
   
