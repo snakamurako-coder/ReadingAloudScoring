@@ -705,13 +705,13 @@
       const accuracy = Number($('score').textContent);
       if (isNaN(accuracy)) return;
       const playbackSpeed = Number($('shadowRate').value);
-      
+
       // 補正係数の計算: correctionFactor = 1 + (playbackSpeed - 1) / 2
       const correctionFactor = 1 + (playbackSpeed - 1) / 2;
-      
+
       // シャドーイングスコアの計算: accuracy × correctionFactor（最大100）
       const shadowingScore = Math.min(100, Math.round(accuracy * correctionFactor));
-      
+
       const el = $('shadowingScoreLine');
       el.style.display = 'block';
       el.textContent = `Shadowing Score: ${shadowingScore} (Base ${accuracy} × ${correctionFactor.toFixed(2)})`;
@@ -830,7 +830,7 @@
           $('previewAudio').src = url;
           $('previewWrap').style.display = 'block';
         };
-        
+
         // 録音開始
         mediaRecorder.start();
         recognition.start();
@@ -847,7 +847,7 @@
               audio.currentTime = 0;
               audio.play();
               $('shadowCountdown').textContent = '再生中...';
-              
+
               // 音声再生終了後5秒で録音停止
               audio.onended = () => {
                 $('shadowCountdown').textContent = '5';
@@ -1037,8 +1037,16 @@
 
       $('displayText').value = 'Loading text...';
 
+      // Reset state
+      isShadowingMode = false;
+      isAudioReady = true; // defaulting to true for text mode
+      isPassageLoaded = false;
+      $('shadowNote').textContent = '';
+      validateStart();
+
       google.script.run
         .withSuccessHandler(res => {
+          isPassageLoaded = true;
           $('fullText').value = res.text; // Store full text for validation? 
           // In original logic: full text is for scoring (res.text here is full or display?)
           // Wait, server returns {id, title, text}. 
@@ -1047,32 +1055,19 @@
 
           // audio_file列から音声ファイルが指定されている場合
           if (res.audioFile) {
-            // Shadowing Mode (audio_file列から)
-            $('displayTextWrap').style.display = 'none';
-            $('shadowingWrap').style.display = 'block';
-
-            // Audio Setup
-            const a = $('shadowAudio');
-            a.src = res.audioFile;
-            a.load(); // 音声ファイルを読み込み
-            $('shadowNote').textContent = '音声ファイルが設定されています。録音開始後、2秒後に音声が再生されます。';
+            setupShadowingAudio(res.audioFile, '音声ファイル');
           } else if (res.isAudioUrl) {
             // Shadowing Mode (text_displayがURLの場合 - 既存の動作)
-            $('displayTextWrap').style.display = 'none';
-            $('shadowingWrap').style.display = 'block';
-
-            // Audio Setup
-            const a = $('shadowAudio');
             const dlUrl = res.text.replace(/\/file\/d\/(.+)\/.*/, '/uc?export=download&id=$1');
-            a.src = dlUrl;
-            a.load();
-            $('shadowNote').textContent = '音声URLが設定されています。録音開始後、2秒後に音声が再生されます。';
+            setupShadowingAudio(dlUrl, '音声URL');
           } else {
             // Text Mode
+            isShadowingMode = false;
+            isAudioReady = true;
             $('displayTextWrap').style.display = 'block';
             $('shadowingWrap').style.display = 'none';
             $('displayText').value = res.text;
-            $('fullText').value = res.text; // Simplification: assume display==full for scoring unless requested otherwise
+            $('fullText').value = res.text;
           }
 
           validateStart();
@@ -1101,10 +1096,47 @@
     }
 
     /* --- Form Validation --- */
+    let isShadowingMode = false;
+    let isAudioReady = true;
+    let isPassageLoaded = false;
+
     function validateStart() {
       const ok = $('studentId').value && $('studentName').value && $('passageSelect').value;
-      if (ok && !listening) $('startBtn').disabled = false;
+      const audioOk = !isShadowingMode || isAudioReady;
+
+      if (ok && isPassageLoaded && audioOk && !listening) $('startBtn').disabled = false;
       else $('startBtn').disabled = true;
+    }
+
+    // Shadowing Setup Helper
+    function setupShadowingAudio(src, label) {
+      isShadowingMode = true;
+      isAudioReady = false;
+
+      $('displayTextWrap').style.display = 'none';
+      $('shadowingWrap').style.display = 'block';
+      $('shadowNote').innerHTML = `<span class="loader"></span> ${label}をダウンロード中...`;
+
+      const a = $('shadowAudio');
+      // Reset handlers
+      a.oncanplaythrough = null;
+      a.onerror = null;
+
+      // Setup handlers BEFORE causing load
+      a.oncanplaythrough = () => {
+        isAudioReady = true;
+        $('shadowNote').textContent = `✅ 準備完了 (${label})。録音開始後、2秒後に音声が再生されます。`;
+        validateStart();
+      };
+
+      a.onerror = () => {
+        $('shadowNote').innerHTML = `<span style="color:var(--danger)">⚠️ 音声の読み込みに失敗しました (${label})</span>`;
+      };
+
+      a.src = src;
+      a.load();
+
+      validateStart();
     }
     ['studentId', 'studentName'].forEach(id => $(id).addEventListener('input', validateStart));
 
@@ -1160,7 +1192,7 @@
         variant: $('accentSelect').value,
         readWhileViewing: 'true' // dummy
       };
-      
+
       // シャドーイングモードの場合、playback_speedとshadowing_scoreを追加
       if ($('shadowingWrap').style.display !== 'none') {
         const playbackSpeed = Number($('shadowRate').value);
@@ -1170,7 +1202,7 @@
           p.shadowing_score = Number(shadowingScoreEl.dataset.shadowingScore);
         }
       }
-      
+
       google.script.run
         .withSuccessHandler(res => {
           $('submitStatusBottom').textContent = '提出完了: ' + res.filename;
