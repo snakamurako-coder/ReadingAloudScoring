@@ -88,7 +88,8 @@ function uploadAudioForSubmission(base64, mimeType, meta) {
   const varAB = normalizeVariant_(meta.variantLabel) || '_';
   const ext = (mimeType && String(mimeType).includes('webm')) ? 'webm' : 'ogg';
 
-  const filename = `${book}_${unit}_${pass}_${sid4}_${score}_${varAB}_${y12}.${ext}`;
+  const baseFilename = `${book}_${unit}_${pass}_${sid4}_${score}_${varAB}_${y12}.${ext}`;
+  const filename = ensureUniqueFilename_(folder, baseFilename);
   const bytes = Utilities.base64Decode(String(base64).split(',')[1] || '');
   const blob = Utilities.newBlob(bytes, mimeType || 'audio/webm', filename);
   const file = folder.createFile(blob);
@@ -127,6 +128,44 @@ function normalizeVariant_(v) {
   if (s.startsWith('a')) return 'A'; // American
   if (s.startsWith('b')) return 'B'; // British
   return '';
+}
+
+// フォルダ内で一意なファイル名を確保（同名ファイルがある場合は (1), (2) などのサフィックスを追加）
+function ensureUniqueFilename_(folder, filename) {
+  // 拡張子を分離
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1) {
+    // 拡張子がない場合
+    let baseName = filename;
+    let counter = 0;
+    while (folder.getFilesByName(baseName).hasNext()) {
+      counter++;
+      baseName = `${filename}(${counter})`;
+    }
+    return baseName;
+  }
+  
+  const baseName = filename.substring(0, lastDot);
+  const ext = filename.substring(lastDot);
+  
+  // まず元のファイル名をチェック
+  if (!folder.getFilesByName(filename).hasNext()) {
+    return filename;
+  }
+  
+  // 存在する場合は (1), (2), ... を追加
+  let counter = 1;
+  let uniqueName;
+  do {
+    uniqueName = `${baseName}(${counter})${ext}`;
+    counter++;
+  } while (folder.getFilesByName(uniqueName).hasNext() && counter < 10000);
+  
+  if (counter >= 10000) {
+    throw new Error('ファイル名の生成に失敗しました（重複が多すぎます）');
+  }
+  
+  return uniqueName;
 }
 
 // 必須チェック
@@ -214,7 +253,8 @@ function enqueueSubmission(payload) {
 
   // ファイル作成
   const queue = getQueueFolder_();
-  const filename = buildFilename_(payload, y12);
+  const baseFilename = buildFilename_(payload, y12);
+  const filename = ensureUniqueFilename_(queue, baseFilename);
   queue.createFile(
     Utilities.newBlob(JSON.stringify(record, null, 2), 'application/json', filename)
   );
