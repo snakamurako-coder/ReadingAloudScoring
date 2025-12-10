@@ -1256,9 +1256,8 @@
                 $('displayTextWrap').style.display = 'block';
                 $('shadowingWrap').style.display = 'none';
                 $('displayText').value = res.text;
-                // テキストモードの場合は'display'テキストを'fullText'に設定
-                // これにより、表示されるテキストとスコアリングに使用されるテキストが一致する
-                $('fullText').value = res.text;
+                // 注意: fullTextは既に'full'テキストで設定されている（1238行目）
+                // スコアリングには'full'テキストを使用し、'display'テキストは表示用のみ
               }
 
               validateStart();
