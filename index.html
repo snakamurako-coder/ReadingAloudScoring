@@ -1100,43 +1100,41 @@
       $('shadowNote').textContent = '';
       validateStart();
 
+      // まず'full'テキストを取得してから、'display'テキストを取得
       google.script.run
-        .withSuccessHandler(res => {
-          isPassageLoaded = true;
-          $('fullText').value = res.text; // Store full text for validation? 
-          // In original logic: full text is for scoring (res.text here is full or display?)
-          // Wait, server returns {id, title, text}. 
-          // We need "full" text for scoring diff, and "display" text for reading.
-          // Let's assume for now we use 'display' call for UI.
+        .withSuccessHandler(fullRes => {
+          // 'full'テキストを先に設定（スコアリング用）
+          $('fullText').value = fullRes.text;
+          
+          // その後'display'テキストを取得（表示用）
+          google.script.run
+            .withSuccessHandler(res => {
+              isPassageLoaded = true;
+              
+              // audio_file列から音声ファイルが指定されている場合
+              if (res.audioFile) {
+                setupShadowingAudio(res.audioFile, '音声ファイル');
+              } else if (res.isAudioUrl) {
+                // Shadowing Mode (text_displayがURLの場合 - 既存の動作)
+                const dlUrl = res.text.replace(/\/file\/d\/(.+)\/.*/, '/uc?export=download&id=$1');
+                setupShadowingAudio(dlUrl, '音声URL');
+              } else {
+                // Text Mode
+                isShadowingMode = false;
+                isAudioReady = true;
+                $('displayTextWrap').style.display = 'block';
+                $('shadowingWrap').style.display = 'none';
+                $('displayText').value = res.text;
+                // テキストモードの場合は'display'テキストを'fullText'に設定
+                // （ただし、すでに'full'テキストが設定されているので、これは不要かもしれないが、
+                // 念のため'display'と'full'が同じ場合の互換性のために残す）
+                // 実際には'full'テキストが優先される
+              }
 
-          // audio_file列から音声ファイルが指定されている場合
-          if (res.audioFile) {
-            setupShadowingAudio(res.audioFile, '音声ファイル');
-          } else if (res.isAudioUrl) {
-            // Shadowing Mode (text_displayがURLの場合 - 既存の動作)
-            const dlUrl = res.text.replace(/\/file\/d\/(.+)\/.*/, '/uc?export=download&id=$1');
-            setupShadowingAudio(dlUrl, '音声URL');
-          } else {
-            // Text Mode
-            isShadowingMode = false;
-            isAudioReady = true;
-            $('displayTextWrap').style.display = 'block';
-            $('shadowingWrap').style.display = 'none';
-            $('displayText').value = res.text;
-            $('fullText').value = res.text;
-          }
-
-          validateStart();
+              validateStart();
+            })
+            .getPassageText(bookId, sheetName, id, 'display');
         })
-        .getPassageText(bookId, sheetName, id, 'display');
-
-      // Also fetch Hidden Full Text if needed? 
-      // For simplicity, let's assume Display Text is enough for scoring for now, 
-      // OR add a secondary fetch if accuracy matters.
-      // *Self-correction*: The original code used 'display' for view and stored it. 
-      // Scoring used whatever was in 'fullText'. 
-      // Let's implicitly fetch full text too for 'fullText' hidden input.
-      google.script.run.withSuccessHandler(r => $('fullText').value = r.text)
         .getPassageText(bookId, sheetName, id, 'full');
     });
 
