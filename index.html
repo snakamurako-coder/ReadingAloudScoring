@@ -1257,6 +1257,8 @@
                 $('shadowingWrap').style.display = 'none';
                 $('displayText').value = res.text;
                 // テキストモードの場合は'display'テキストを'fullText'に設定
+                // これにより、表示されるテキストとスコアリングに使用されるテキストが一致する
+                $('fullText').value = res.text;
               }
 
               validateStart();
