@@ -1180,37 +1180,108 @@
     loadBooks();
 
     // Save/Submit
-    $('saveBtn').onclick = function () {
-      const p = {
-        bookName: $('bookSelect').options[$('bookSelect').selectedIndex].text,
-        unitName: $('sheetSelect').value,
-        passageLabel: $('passageSelect').value,
-        studentId4: $('studentId').value,
-        studentName: $('studentName').value,
-        recognizedText: $('recognized').value,
-        score: $('score').textContent,
-        variant: $('accentSelect').value,
-        readWhileViewing: 'true' // dummy
-      };
+    /* --- Helpers for Upload --- */
+    function blobToDataURL(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
 
-      // シャドーイングモードの場合、playback_speedとshadowing_scoreを追加
-      if ($('shadowingWrap').style.display !== 'none') {
-        const playbackSpeed = Number($('shadowRate').value);
-        const shadowingScoreEl = $('shadowingScoreLine');
-        if (shadowingScoreEl.dataset.shadowingScore) {
-          p.playback_speed = playbackSpeed;
-          p.shadowing_score = Number(shadowingScoreEl.dataset.shadowingScore);
+    function getNow12Digits() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const y = String(now.getFullYear()).slice(2);
+      const m = pad(now.getMonth() + 1);
+      const d = pad(now.getDate());
+      const H = pad(now.getHours());
+      const M = pad(now.getMinutes());
+      const S = pad(now.getSeconds());
+      return y + m + d + H + M + S;
+    }
+
+    // Save/Submit
+    $('saveBtn').onclick = async function () {
+      try {
+        setLoading(this, true); // Loading state
+        this.textContent = '⏳ Uploading Audio...';
+
+        // 1. Prepare Metadata Base
+        const timestamp12 = getNow12Digits();
+        const p = {
+          bookName: $('bookSelect').options[$('bookSelect').selectedIndex].text,
+          unitName: $('sheetSelect').value,
+          passageLabel: $('passageSelect').value,
+          studentId4: $('studentId').value,
+          studentName: $('studentName').value,
+          recognizedText: $('recognized').value,
+          score: $('score').textContent,
+          variant: $('accentSelect').value,
+          readWhileViewing: 'true', // dummy
+          timestamp12: timestamp12    // Ensure consistent naming
+        };
+
+        // シャドーイングモードの場合、playback_speedとshadowing_scoreを追加
+        if ($('shadowingWrap').style.display !== 'none') {
+          const playbackSpeed = Number($('shadowRate').value);
+          const shadowingScoreEl = $('shadowingScoreLine');
+          if (shadowingScoreEl.dataset.shadowingScore) {
+            p.playback_speed = playbackSpeed;
+            p.shadowing_score = Number(shadowingScoreEl.dataset.shadowingScore);
+          }
         }
-      }
 
-      google.script.run
-        .withSuccessHandler(res => {
-          $('submitStatusBottom').textContent = '提出完了: ' + res.filename;
-          $('submitStatusBottom').className = 'status-badge ok';
-          alert('Submitted successfully!');
-        })
-        .withFailureHandler(e => alert('Error: ' + e))
-        .enqueueSubmission(p);
+        // 2. Upload Audio (if exists)
+        let audioViewUrl = '';
+        if (recordedChunks.length > 0) {
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const base64 = await blobToDataURL(blob);
+
+          // Call server to upload audio
+          // We wrap google.script.run in a Promise for async/await usage
+          const uploadResult = await new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .uploadAudioForSubmission(base64, 'audio/webm', p);
+          });
+
+          audioViewUrl = uploadResult.viewUrl;
+          console.log('Audio Uploaded:', uploadResult.filename);
+        } else {
+          console.warn('No audio recording found.');
+        }
+
+        // 3. Submit JSON with Audio URL
+        p.audioViewUrl = audioViewUrl;
+
+        this.textContent = '⏳ Submitting Data...';
+
+        const jsonResult = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .enqueueSubmission(p);
+        });
+
+        // 4. Done
+        $('submitStatusBottom').textContent = '提出完了: ' + jsonResult.filename;
+        $('submitStatusBottom').className = 'status-badge ok';
+        alert('Submitted successfully!');
+
+      } catch (e) {
+        alert('Error: ' + e);
+        console.error(e);
+      } finally {
+        setLoading(this, false);
+        this.textContent = '💾 提出する';
+        // Disable button after success to prevent double submit? 
+        // Or keep enabled for retry if failed. 
+        // If success, maybe we should reset or leave as is. 
+        // For now, leaving it enabled behavior same as original but resetting text.
+      }
     };
 
   </script>
