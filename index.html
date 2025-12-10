@@ -443,16 +443,98 @@
       color: #991b1b;
     }
 
-    /* Enhanced Loader */
-    .loader {
-      border: 2px solid rgba(0, 0, 0, 0.1);
-      border-top: 2px solid currentColor;
+    /* Enhanced Loader & Overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      pointer-events: none;
+      /* Make interaction pass through */
+      background: rgba(255, 255, 255, 0);
+      /* Transparent to show it's non-blocking, or slight hint? Request said "Make it obvious it's loading", but "operations are effective". user said "text centered... rotating ring". Let's use semi-transparent bg for the center part or just the element. */
+    }
+
+    .loading-content {
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(4px);
+      padding: 30px 50px;
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      pointer-events: auto;
+      /* Maybe the loader itself blocks clicks? User said "operations are effective (load is non-blocking to UI behind?)". "ロード中は、操作が効くことは担保しつつ" -> "While loading, guarantee operations work". So purely pointer-events: none for everything. */
+    }
+
+    /* Override to ensure click-through if requested "operations work" 
+       Actually user said "operations ARE effective". 
+       So simply: pointer-events: none on the WHOLE overlay. 
+    */
+    .loading-overlay {
+      pointer-events: none;
+    }
+
+    .landolt-ring {
+      width: 60px;
+      height: 60px;
+      border: 6px solid var(--primary);
+      border-top-color: transparent;
+      /* The "Gap" */
       border-radius: 50%;
-      width: 1rem;
-      height: 1rem;
-      animation: spin 0.8s linear infinite;
-      display: inline-block;
-      vertical-align: text-bottom;
+      animation: spin 1s linear infinite;
+    }
+
+    .loading-text {
+      font-weight: 700;
+      color: var(--primary);
+      font-size: 1.2rem;
+      letter-spacing: 1px;
+    }
+
+    /* Comparison UI Updates */
+    .diff-container {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .diff-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .diff-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .tok.miss {
+      color: var(--danger);
+      font-weight: bold;
+      text-decoration: underline;
+    }
+
+    .tok.add {
+      background-color: #fef08a;
+      /* Yellow-200 */
+      color: #854d0e;
+      /* Yellow-800 */
+      border-radius: 4px;
+      padding: 0 2px;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -582,9 +664,16 @@
           <label>📝 Speech Recognition Result</label>
           <textarea id="recognized" class="diff-box" rows="4" readonly placeholder="Waiting for result..."></textarea>
 
-          <div style="margin-top:16px;">
-            <label>🔍 Comparison (You vs. Text)</label>
-            <div id="hypHighlighted" class="diff-box" style="min-height:80px;"></div>
+          <div class="diff-container">
+            <div class="diff-row">
+              <span class="diff-label">Text (Missing items in Red)</span>
+              <div id="refHighlighted" class="diff-box" style="min-height:60px;"></div>
+            </div>
+
+            <div class="diff-row">
+              <span class="diff-label">You (Extra items in Yellow)</span>
+              <div id="hypHighlighted" class="diff-box" style="min-height:60px;"></div>
+            </div>
           </div>
         </div>
 
@@ -626,6 +715,16 @@
 
   </div>
 
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay" style="display: none; opacity: 0; transition: opacity 0.3s;">
+    <div class="loading-content">
+      <div class="landolt-ring"></div>
+      <div class="loading-text">Loading...</div>
+    </div>
+  </div>
+
   <footer>
     © 2025 Kojiro Nakamura. All rights reserved.<br>
     Unauthorized reproduction or redistribution is prohibited.<br>
@@ -639,8 +738,24 @@
 
     function $(id) { return document.getElementById(id); }
     function _s(v) { return v == null ? '' : String(v); }
-    // Helper to escape HTML
     function escapeHtml(s) { return _s(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    /* --- Loading UI --- */
+    function showLoading() {
+      const el = $('loadingOverlay');
+      el.style.display = 'flex';
+      // Force repaint
+      el.offsetHeight;
+      el.style.opacity = '1';
+    }
+
+    function hideLoading() {
+      const el = $('loadingOverlay');
+      el.style.opacity = '0';
+      setTimeout(() => {
+        el.style.display = 'none';
+      }, 300);
+    }
 
     /* --- Text Analysis Utility --- */
     function normalize(t) { return (t || "").toLowerCase().replace(/[“”"'’]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim(); }
@@ -705,12 +820,13 @@
       // Diff Highlight
       const d = diffWordsWithIndex(ref, h);
 
-      // We only show HYP (student's) text with additions highlighted? 
-      // Actually standard is to show what they said, marking redundancy, 
-      // AND show REF, marking missing. 
-      // For simplicity in this UI, let's show one unified view or just the HYP view with "Add/Miss" indicators?
-      // The original code separated them. Let's try to show meaningful feedback.
-      // Re-using the prompt's logic:
+      // Row 1: Reference Text with Missing Words (Red)
+      // d.H is hyp tokens, d.R is ref tokens.
+      // We want to show d.R, highlighting indices in d.missedIdx
+      $('refHighlighted').innerHTML = renderHighlighted(d.R, new Set(d.missedIdx), 'miss');
+
+      // Row 2: Hypothesis Text with Extra Words (Yellow)
+      // Show d.H, highlighting indices in d.addedIdx
       $('hypHighlighted').innerHTML = renderHighlighted(d.H, new Set(d.addedIdx), 'add');
 
       // Render Missed Words
@@ -973,6 +1089,7 @@
 
     // 1. Load Books
     function loadBooks() {
+      showLoading();
       const sel = $('bookSelect');
       sel.innerHTML = '<option>Loading...</option>';
       sel.disabled = true;
@@ -985,8 +1102,9 @@
           PB_INDEX.books = list.map(b => ({ fileId: b.fileId, fileName: b.fileName, sheets: [] })); // Reset structure
           saveCache();
           renderBookSelect();
+          hideLoading();
         })
-        .withFailureHandler(e => { alert('Failed to load books: ' + e); })
+        .withFailureHandler(e => { alert('Failed to load books: ' + e); hideLoading(); })
         .getPassageBooks();
     }
 
@@ -1011,6 +1129,7 @@
     });
 
     function loadSheets(bookId) {
+      showLoading();
       const sel = $('sheetSelect');
       sel.disabled = true; sel.innerHTML = '<option>Loading...</option>';
 
@@ -1025,6 +1144,11 @@
           if (book) book.sheets = list.map(n => ({ name: n, passages: [] }));
           saveCache();
           renderSheetSelect(book.sheets);
+          hideLoading();
+        })
+        .withFailureHandler(e => {
+          console.error(e);
+          hideLoading();
         })
         .getSheetsInBook(bookId);
     }
@@ -1052,6 +1176,7 @@
     });
 
     function loadPassages(bookId, sheetName) {
+      showLoading();
       const sel = $('passageSelect');
       sel.disabled = true; sel.innerHTML = '<option>Loading...</option>';
 
@@ -1066,6 +1191,11 @@
           if (sheet) sheet.passages = list;
           saveCache();
           renderPassageSelect(list);
+          hideLoading();
+        })
+        .withFailureHandler(e => {
+          console.error(e);
+          hideLoading();
         })
         .listPassageHeads(bookId, sheetName);
     }
@@ -1091,6 +1221,7 @@
       const bookId = $('bookSelect').value;
       const sheetName = $('sheetSelect').value;
 
+      showLoading();
       $('displayText').value = 'Loading text...';
 
       // Reset state
@@ -1105,12 +1236,12 @@
         .withSuccessHandler(fullRes => {
           // 'full'テキストを先に設定（スコアリング用）
           $('fullText').value = fullRes.text;
-          
+
           // その後'display'テキストを取得（表示用）
           google.script.run
             .withSuccessHandler(res => {
               isPassageLoaded = true;
-              
+
               // audio_file列から音声ファイルが指定されている場合
               if (res.audioFile) {
                 setupShadowingAudio(res.audioFile, '音声ファイル');
@@ -1126,14 +1257,20 @@
                 $('shadowingWrap').style.display = 'none';
                 $('displayText').value = res.text;
                 // テキストモードの場合は'display'テキストを'fullText'に設定
-                // （ただし、すでに'full'テキストが設定されているので、これは不要かもしれないが、
-                // 念のため'display'と'full'が同じ場合の互換性のために残す）
-                // 実際には'full'テキストが優先される
               }
 
               validateStart();
+              hideLoading();
+            })
+            .withFailureHandler(e => {
+              alert('Failed to load passage text: ' + e);
+              hideLoading();
             })
             .getPassageText(bookId, sheetName, id, 'display');
+        })
+        .withFailureHandler(e => {
+          alert('Failed to load full text: ' + e);
+          hideLoading();
         })
         .getPassageText(bookId, sheetName, id, 'full');
     });
@@ -1277,6 +1414,7 @@
       try {
         // Use custom setLoading to keep spinner
         setLoading(this, true, 'Uploading Audio...');
+        showLoading(); // GLOBAL OVERLAY
 
         // 1. Prepare Metadata Base
         const timestamp12 = getNow12Digits();
@@ -1347,6 +1485,7 @@
         console.error(e);
       } finally {
         setLoading(this, false); // Restores original text "💾 提出する"
+        hideLoading(); // HIDE GLOBAL OVERLAY
         // Disable button after success to prevent double submit? 
         // Or keep enabled for retry if failed. 
         // If success, maybe we should reset or leave as is. 
