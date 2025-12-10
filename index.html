@@ -22,6 +22,12 @@
       --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
 
+    /* Button Loading State override */
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
     * {
       box-sizing: border-box;
     }
@@ -406,6 +412,47 @@
 
     footer a:hover {
       text-decoration: underline;
+    }
+
+    /* Message / Alert Boxes */
+    .alert-box {
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 8px;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .alert-box.info {
+      background-color: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    .alert-box.success {
+      background-color: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+
+    .alert-box.error {
+      background-color: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+
+    /* Enhanced Loader */
+    .loader {
+      border: 2px solid rgba(0, 0, 0, 0.1);
+      border-top: 2px solid currentColor;
+      border-radius: 50%;
+      width: 1rem;
+      height: 1rem;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+      vertical-align: text-bottom;
     }
   </style>
 </head>
@@ -903,15 +950,24 @@
     function saveCache() { localStorage.setItem(CACHE_KEY, JSON.stringify(PB_INDEX)); }
     function findBook(id) { return PB_INDEX.books.find(b => b.fileId === id); }
 
-    function setLoading(el, isLoading) {
+    function setLoading(el, isLoading, customText) {
       if (isLoading) {
-        el.dataset.orig = el.textContent;
-        el.innerHTML = '<span class="loader"></span> Loading...';
+        if (!el.dataset.orig) el.dataset.orig = el.innerHTML; // Check to prevent double-save
+        const text = customText || 'Loading...';
+        el.innerHTML = `<span class="loader"></span> ${text}`;
         el.disabled = true;
+        el.style.opacity = '0.7';
+        el.style.cursor = 'wait';
       } else {
         el.innerHTML = el.dataset.orig || el.textContent;
-        if (el.id.includes('Refresh')) el.textContent = '🔄';
+        // Restore special tokens if needed
+        if (el.id === 'refreshBooksBtn' || el.id === 'refreshSheetsBtn' || el.id === 'refreshPassagesBtn') {
+          el.textContent = '🔄';
+        }
         el.disabled = false;
+        el.style.opacity = '';
+        el.style.cursor = '';
+        delete el.dataset.orig;
       }
     }
 
@@ -1115,7 +1171,15 @@
 
       $('displayTextWrap').style.display = 'none';
       $('shadowingWrap').style.display = 'block';
-      $('shadowNote').innerHTML = `<span class="loader"></span> ${label}をダウンロード中...`;
+
+      // Loading State
+      $('shadowNote').className = 'alert-box info';
+      $('shadowNote').innerHTML = `<span class="loader"></span> <b>${label}</b> をダウンロード中...<br><span style="font-size:0.8em; margin-left:24px;">※完了するまで「録音開始」できません</span>`;
+
+      const startBtn = $('startBtn');
+      startBtn.dataset.origText = startBtn.textContent; // Backup original text
+      startBtn.innerHTML = '<span class="loader"></span> 音声読込中...';
+      startBtn.disabled = true;
 
       const a = $('shadowAudio');
       // Reset handlers
@@ -1125,12 +1189,20 @@
       // Setup handlers BEFORE causing load
       a.oncanplaythrough = () => {
         isAudioReady = true;
-        $('shadowNote').textContent = `✅ 準備完了 (${label})。録音開始後、2秒後に音声が再生されます。`;
+        $('shadowNote').className = 'alert-box success';
+        $('shadowNote').innerHTML = `✅ <b>準備完了</b> (${label})<br><span style="font-size:0.8em; margin-left:24px;">録音開始後、2秒後に音声が再生されます。</span>`;
+
+        // Restore Start Button
+        if (startBtn.dataset.origText) {
+          startBtn.innerHTML = '🎙️ 録音開始'; // Hardcode preferred state or restore
+        }
         validateStart();
       };
 
       a.onerror = () => {
-        $('shadowNote').innerHTML = `<span style="color:var(--danger)">⚠️ 音声の読み込みに失敗しました (${label})</span>`;
+        $('shadowNote').className = 'alert-box error';
+        $('shadowNote').innerHTML = `⚠️ <b>読み込み失敗</b> (${label})<br><span style="font-size:0.8em; margin-left:24px;">URLを確認してください。</span>`;
+        startBtn.innerHTML = '⚠️ エラー';
       };
 
       a.src = src;
@@ -1205,8 +1277,8 @@
     // Save/Submit
     $('saveBtn').onclick = async function () {
       try {
-        setLoading(this, true); // Loading state
-        this.textContent = '⏳ Uploading Audio...';
+        // Use custom setLoading to keep spinner
+        setLoading(this, true, 'Uploading Audio...');
 
         // 1. Prepare Metadata Base
         const timestamp12 = getNow12Digits();
@@ -1257,7 +1329,8 @@
         // 3. Submit JSON with Audio URL
         p.audioViewUrl = audioViewUrl;
 
-        this.textContent = '⏳ Submitting Data...';
+        // Update text for next phase (manual update required if we want to change text but keep spinner state logic clean)
+        this.innerHTML = '<span class="loader"></span> Submitting Data...';
 
         const jsonResult = await new Promise((resolve, reject) => {
           google.script.run
@@ -1275,8 +1348,7 @@
         alert('Error: ' + e);
         console.error(e);
       } finally {
-        setLoading(this, false);
-        this.textContent = '💾 提出する';
+        setLoading(this, false); // Restores original text "💾 提出する"
         // Disable button after success to prevent double submit? 
         // Or keep enabled for retry if failed. 
         // If success, maybe we should reset or leave as is. 
