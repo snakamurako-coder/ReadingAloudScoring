@@ -735,8 +735,19 @@
     /* =========================================
        CORE LOGIC (Migrated from original)
        ========================================= */
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:734',message:'Script execution started',data:{readyState:document.readyState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
-    function $(id) { return document.getElementById(id); }
+    function $(id) { 
+      const el = document.getElementById(id);
+      // #region agent log
+      if (!el && (id === 'bookSelect' || id === 'loadingOverlay')) {
+        fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:$(id)',message:'DOM element not found',data:{id:id,readyState:document.readyState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      }
+      // #endregion
+      return el;
+    }
     function _s(v) { return v == null ? '' : String(v); }
     function escapeHtml(s) { return _s(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -1121,8 +1132,14 @@
 
     // 1. Load Books
     function loadBooks() {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:loadBooks',message:'loadBooks called',data:{hasGoogle:typeof google!=='undefined',hasScript:typeof google!=='undefined'&&!!google.script,hasRun:typeof google!=='undefined'&&!!google.script&&!!google.script.run},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       // google.script.runが利用可能かチェック
       if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:loadBooks',message:'GAS API not available',data:{hasGoogle:typeof google!=='undefined',hasScript:typeof google!=='undefined'&&!!google.script},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         console.error('Google Apps Script API is not available');
         alert('Google Apps Script APIが利用できません。GASのデプロイと権限を確認してください。');
         hideLoading();
@@ -1143,8 +1160,14 @@
         // 非同期リクエスト完了後にhideLoadingする（キャッシュ時は隠さない）
       }
 
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:loadBooks',message:'Calling getPassageBooks',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       google.script.run
         .withSuccessHandler(list => {
+          // #region agent log
+          fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:loadBooks',message:'getPassageBooks success',data:{isArray:Array.isArray(list),listLength:Array.isArray(list)?list.length:'N/A'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
           console.log('Books loaded:', list);
           if (!Array.isArray(list)) {
             console.error('Invalid response format:', list);
@@ -1161,6 +1184,9 @@
           hideLoading();
         })
         .withFailureHandler(e => {
+          // #region agent log
+          fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:loadBooks',message:'getPassageBooks failed',data:{error:String(e),errorMessage:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
           console.error('Failed to load books:', e);
           alert('ブックの読み込みに失敗しました: ' + (e.message || e));
           hideLoading();
@@ -1521,7 +1547,18 @@
     $('scrollDown').onclick = () => scrollT(30);
 
     // Initial Load
-    loadBooks();
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:1524',message:'About to call loadBooks',data:{bookSelectExists:!!$('bookSelect')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    try {
+      loadBooks();
+    } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/71a87d0e-12af-4b85-bf25-77b658d93ac4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:1524',message:'loadBooks threw exception',data:{error:String(e),errorMessage:e?.message,stack:e?.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      console.error('Error calling loadBooks:', e);
+      alert('起動エラー: ' + (e.message || e));
+    }
 
     // Save/Submit
     /* --- Helpers for Upload --- */
