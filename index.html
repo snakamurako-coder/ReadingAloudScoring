@@ -889,7 +889,15 @@
     async function startMicCheck() {
       try {
         if (micCheckStream) return;
-        micCheckStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micCheckStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 24000, // 希望値（ブラウザが近似値に調整）
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
         setupMeter(micCheckStream);
         $('status').textContent = 'Microphone Check...';
         $('micCheckStartBtn').disabled = true;
@@ -902,18 +910,27 @@
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const src = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 64; // 軽量化
       src.connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
+      const binCount = analyser.frequencyBinCount;
+      const data = new Uint8Array(binCount);
       const bar = $('meterBar');
 
+      // 軽量なRMS計算＋間引き描画
+      let skip = 0;
       function draw() {
-        analyser.getByteFrequencyData(data);
-        // simple average
-        let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i];
-        const avg = sum / data.length;
-        const pct = Math.min(100, avg * 2.5); // amplify a bit
-        bar.style.width = pct + '%';
+        if (!analyser) return;
+        if (skip++ % 2 === 0) { // 2フレームに1回だけ処理
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < binCount; i++) {
+            const v = (data[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / binCount);
+          const pct = Math.min(100, Math.max(0, rms * 180)); // ざっくり拡大
+          bar.style.width = pct + '%';
+        }
         meterRAF = requestAnimationFrame(draw);
       }
       draw();
@@ -921,6 +938,7 @@
 
     function stopMeter() {
       if (meterRAF) cancelAnimationFrame(meterRAF);
+      meterRAF = null;
       $('meterBar').style.width = '0%';
     }
 
@@ -980,10 +998,24 @@
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // stop any previous meter loop (e.g., from mic check)
+        stopMeter();
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 24000, // 希望値（ブラウザ次第で16〜48kに丸められる）
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
         setupMeter(stream);
 
-        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus',
+          audioBitsPerSecond: 48000 // 48 kbps（軽量寄り）
+        });
         recordedChunks = [];
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = () => {
@@ -1242,13 +1274,12 @@
             .withSuccessHandler(res => {
               isPassageLoaded = true;
 
-              // audio_file列から音声ファイルが指定されている場合
+              // audio_file列から音声ファイルが指定されている場合（拡張子は問わず、ブラウザ/GASが扱えるものを許容）
               if (res.audioFile) {
-                setupShadowingAudio(res.audioFile, '音声ファイル');
+                setupShadowingAudio(resolveAudioSrc(res.audioFile), '音声ファイル');
               } else if (res.isAudioUrl) {
-                // Shadowing Mode (text_displayがURLの場合 - 既存の動作)
-                const dlUrl = res.text.replace(/\/file\/d\/(.+)\/.*/, '/uc?export=download&id=$1');
-                setupShadowingAudio(dlUrl, '音声URL');
+                // text_displayがURLの場合も、そのままorDrive変換で許容
+                setupShadowingAudio(resolveAudioSrc(res.text), '音声URL');
               } else {
                 // Text Mode
                 isShadowingMode = false;
@@ -1300,6 +1331,15 @@
       else $('startBtn').disabled = true;
     }
 
+    // 任意拡張子対応: Google Drive共有URLは直接DLリンクに変換し、それ以外はそのまま使う
+    function resolveAudioSrc(raw) {
+      if (!raw) return '';
+      const s = String(raw).trim();
+      const driveMatch = s.match(/https?:\/\/drive\.google\.com\/file\/d\/([^/]+)\//i);
+      if (driveMatch) return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      return s; // そのまま（mp3/ogg/wav/webm などブラウザ＆GASが返すものを許容）
+    }
+
     // Shadowing Setup Helper
     function setupShadowingAudio(src, label) {
       isShadowingMode = true;
@@ -1318,9 +1358,23 @@
       startBtn.disabled = true;
 
       const a = $('shadowAudio');
+      a.preload = 'auto';
       // Reset handlers
       a.oncanplaythrough = null;
       a.onerror = null;
+
+      // 音源URLを正規化
+      const normalizedSrc = resolveAudioSrc(src);
+
+      // 既に同一ソースを読み込み済みなら再取得を避ける（バージョン付きURL推奨）
+      if (a.dataset.loadedSrc === normalizedSrc && a.readyState >= 3) {
+        isAudioReady = true;
+        $('shadowNote').className = 'alert-box success';
+        $('shadowNote').innerHTML = `✅ <b>準備完了</b> (${label})<br><span style="font-size:0.8em; margin-left:24px;">キャッシュ済み音源を使用します。</span>`;
+        startBtn.innerHTML = '🎙️ 録音開始';
+        validateStart();
+        return;
+      }
 
       // Setup handlers BEFORE causing load
       a.oncanplaythrough = () => {
@@ -1341,7 +1395,8 @@
         startBtn.innerHTML = '⚠️ エラー';
       };
 
-      a.src = src;
+      a.dataset.loadedSrc = normalizedSrc;
+      a.src = normalizedSrc;
       a.load();
 
       validateStart();
