@@ -1121,22 +1121,53 @@
 
     // 1. Load Books
     function loadBooks() {
+      // google.script.runが利用可能かチェック
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        console.error('Google Apps Script API is not available');
+        alert('Google Apps Script APIが利用できません。GASのデプロイと権限を確認してください。');
+        hideLoading();
+        const sel = $('bookSelect');
+        sel.innerHTML = '<option value="">— エラー: GAS接続不可 —</option>';
+        sel.disabled = false;
+        return;
+      }
+
       showLoading();
       const sel = $('bookSelect');
       sel.innerHTML = '<option>Loading...</option>';
       sel.disabled = true;
 
       // Use cache first
-      if (PB_INDEX.books.length > 0) renderBookSelect();
+      if (PB_INDEX.books.length > 0) {
+        renderBookSelect();
+        hideLoading(); // キャッシュがある場合は一旦非表示
+      }
 
       google.script.run
         .withSuccessHandler(list => {
+          console.log('Books loaded:', list);
+          if (!Array.isArray(list)) {
+            console.error('Invalid response format:', list);
+            alert('ブックデータの形式が不正です。');
+            hideLoading();
+            const sel = $('bookSelect');
+            sel.innerHTML = '<option value="">— エラー: データ形式不正 —</option>';
+            sel.disabled = false;
+            return;
+          }
           PB_INDEX.books = list.map(b => ({ fileId: b.fileId, fileName: b.fileName, sheets: [] })); // Reset structure
           saveCache();
           renderBookSelect();
           hideLoading();
         })
-        .withFailureHandler(e => { alert('Failed to load books: ' + e); hideLoading(); })
+        .withFailureHandler(e => {
+          console.error('Failed to load books:', e);
+          alert('ブックの読み込みに失敗しました: ' + (e.message || e));
+          hideLoading();
+          const sel = $('bookSelect');
+          sel.innerHTML = '<option value="">— エラー: 読み込み失敗 —</option>';
+          sel.disabled = false;
+        })
         .getPassageBooks();
     }
 
@@ -1161,6 +1192,15 @@
     });
 
     function loadSheets(bookId) {
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        console.error('Google Apps Script API is not available');
+        hideLoading();
+        const sel = $('sheetSelect');
+        sel.innerHTML = '<option value="">— エラー: GAS接続不可 —</option>';
+        sel.disabled = false;
+        return;
+      }
+
       showLoading();
       const sel = $('sheetSelect');
       sel.disabled = true; sel.innerHTML = '<option>Loading...</option>';
@@ -1169,18 +1209,33 @@
       const book = findBook(bookId);
       if (book && book.sheets && book.sheets.length > 0) {
         renderSheetSelect(book.sheets);
+        hideLoading(); // キャッシュがある場合は一旦非表示
       }
 
       google.script.run
         .withSuccessHandler(list => {
+          console.log('Sheets loaded:', list);
+          if (!Array.isArray(list)) {
+            console.error('Invalid response format:', list);
+            alert('シートデータの形式が不正です。');
+            hideLoading();
+            const sel = $('sheetSelect');
+            sel.innerHTML = '<option value="">— エラー: データ形式不正 —</option>';
+            sel.disabled = false;
+            return;
+          }
           if (book) book.sheets = list.map(n => ({ name: n, passages: [] }));
           saveCache();
           renderSheetSelect(book.sheets);
           hideLoading();
         })
         .withFailureHandler(e => {
-          console.error(e);
+          console.error('Failed to load sheets:', e);
+          alert('シートの読み込みに失敗しました: ' + (e.message || e));
           hideLoading();
+          const sel = $('sheetSelect');
+          sel.innerHTML = '<option value="">— エラー: 読み込み失敗 —</option>';
+          sel.disabled = false;
         })
         .getSheetsInBook(bookId);
     }
@@ -1208,6 +1263,15 @@
     });
 
     function loadPassages(bookId, sheetName) {
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        console.error('Google Apps Script API is not available');
+        hideLoading();
+        const sel = $('passageSelect');
+        sel.innerHTML = '<option value="">— エラー: GAS接続不可 —</option>';
+        sel.disabled = false;
+        return;
+      }
+
       showLoading();
       const sel = $('passageSelect');
       sel.disabled = true; sel.innerHTML = '<option>Loading...</option>';
@@ -1216,18 +1280,33 @@
       const sheet = book?.sheets?.find(s => s.name === sheetName);
       if (sheet && sheet.passages && sheet.passages.length > 0) {
         renderPassageSelect(sheet.passages);
+        hideLoading(); // キャッシュがある場合は一旦非表示
       }
 
       google.script.run
         .withSuccessHandler(list => {
+          console.log('Passages loaded:', list);
+          if (!Array.isArray(list)) {
+            console.error('Invalid response format:', list);
+            alert('パッセージデータの形式が不正です。');
+            hideLoading();
+            const sel = $('passageSelect');
+            sel.innerHTML = '<option value="">— エラー: データ形式不正 —</option>';
+            sel.disabled = false;
+            return;
+          }
           if (sheet) sheet.passages = list;
           saveCache();
           renderPassageSelect(list);
           hideLoading();
         })
         .withFailureHandler(e => {
-          console.error(e);
+          console.error('Failed to load passages:', e);
+          alert('パッセージの読み込みに失敗しました: ' + (e.message || e));
           hideLoading();
+          const sel = $('passageSelect');
+          sel.innerHTML = '<option value="">— エラー: 読み込み失敗 —</option>';
+          sel.disabled = false;
         })
         .listPassageHeads(bookId, sheetName);
     }
