@@ -912,8 +912,7 @@
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 64; // 軽量化
       src.connect(analyser);
-      const binCount = analyser.frequencyBinCount;
-      const data = new Uint8Array(binCount);
+      const data = new Uint8Array(analyser.fftSize); // getByteTimeDomainDataはfftSizeサイズが必要
       const bar = $('meterBar');
 
       // 軽量なRMS計算＋間引き描画
@@ -923,11 +922,11 @@
         if (skip++ % 2 === 0) { // 2フレームに1回だけ処理
           analyser.getByteTimeDomainData(data);
           let sum = 0;
-          for (let i = 0; i < binCount; i++) {
+          for (let i = 0; i < data.length; i++) {
             const v = (data[i] - 128) / 128;
             sum += v * v;
           }
-          const rms = Math.sqrt(sum / binCount);
+          const rms = Math.sqrt(sum / data.length);
           const pct = Math.min(100, Math.max(0, rms * 180)); // ざっくり拡大
           bar.style.width = pct + '%';
         }
@@ -1359,9 +1358,6 @@
 
       const a = $('shadowAudio');
       a.preload = 'auto';
-      // Reset handlers
-      a.oncanplaythrough = null;
-      a.onerror = null;
 
       // 音源URLを正規化
       const normalizedSrc = resolveAudioSrc(src);
@@ -1375,6 +1371,10 @@
         validateStart();
         return;
       }
+
+      // Reset handlers (キャッシュチェックの後で実行)
+      a.oncanplaythrough = null;
+      a.onerror = null;
 
       // Setup handlers BEFORE causing load
       a.oncanplaythrough = () => {
