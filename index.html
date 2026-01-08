@@ -1140,7 +1140,7 @@
       // Use cache first
       if (PB_INDEX.books.length > 0) {
         renderBookSelect();
-        hideLoading(); // キャッシュがある場合は一旦非表示
+        // 非同期リクエスト完了後にhideLoadingする（キャッシュ時は隠さない）
       }
 
       google.script.run
@@ -1209,7 +1209,7 @@
       const book = findBook(bookId);
       if (book && book.sheets && book.sheets.length > 0) {
         renderSheetSelect(book.sheets);
-        hideLoading(); // キャッシュがある場合は一旦非表示
+        // 非同期リクエスト完了後にhideLoadingする（キャッシュ時は隠さない）
       }
 
       google.script.run
@@ -1224,9 +1224,10 @@
             sel.disabled = false;
             return;
           }
-          if (book) book.sheets = list.map(n => ({ name: n, passages: [] }));
+          const sheets = list.map(n => ({ name: n, passages: [] }));
+          if (book) book.sheets = sheets;
           saveCache();
-          renderSheetSelect(book.sheets);
+          renderSheetSelect(sheets);
           hideLoading();
         })
         .withFailureHandler(e => {
@@ -1280,7 +1281,7 @@
       const sheet = book?.sheets?.find(s => s.name === sheetName);
       if (sheet && sheet.passages && sheet.passages.length > 0) {
         renderPassageSelect(sheet.passages);
-        hideLoading(); // キャッシュがある場合は一旦非表示
+        // 非同期リクエスト完了後にhideLoadingする（キャッシュ時は隠さない）
       }
 
       google.script.run
