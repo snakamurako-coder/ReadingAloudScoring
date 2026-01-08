@@ -382,19 +382,21 @@ function getPassageBooks() {
     const f = files.next();
     const mime = f.getMimeType();
 
-    if (mime === MimeType.GOOGLE_SHEETS) {
-      out.push({ fileId: f.getId(), fileName: f.getName() });
-      hasSheets = true;
-    } else if (mime === 'application/vnd.google-apps.shortcut') {
-      // ショートカット対応
-      try {
+    try {
+      if (mime === 'application/vnd.google-apps.spreadsheet') {
+        out.push({ fileId: f.getId(), fileName: f.getName() });
+        hasSheets = true;
+      } else if (mime === 'application/vnd.google-apps.shortcut') {
+        // ショートカット対応
         const targetId = f.getTargetId();
         const target = DriveApp.getFileById(targetId);
-        if (target.getMimeType() === MimeType.GOOGLE_SHEETS) {
+        if (target.getMimeType() === 'application/vnd.google-apps.spreadsheet') {
           out.push({ fileId: targetId, fileName: f.getName() }); // 名前はショートカット名を使う
           hasSheets = true;
         }
-      } catch (e) { console.warn('Shortcut resolution failed', e); }
+      }
+    } catch (e) {
+      console.warn('Error processing file: ' + f.getName(), e);
     }
   }
 
