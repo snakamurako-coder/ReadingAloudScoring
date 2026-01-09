@@ -1271,10 +1271,10 @@
 
               // audio_file列から音声ファイルが指定されている場合（拡張子は問わず、ブラウザ/GASが扱えるものを許容）
               if (res.audioFile) {
-                setupShadowingAudio(resolveAudioSrc(res.audioFile), '音声ファイル');
+                setupShadowingAudio(res.audioFile, '音声ファイル');
               } else if (res.isAudioUrl) {
                 // text_displayがURLの場合も、そのままorDrive変換で許容
-                setupShadowingAudio(resolveAudioSrc(res.text), '音声URL');
+                setupShadowingAudio(res.text, '音声URL');
               } else {
                 // Text Mode
                 isShadowingMode = false;
