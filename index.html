@@ -1120,7 +1120,13 @@
           renderBookSelect();
           hideLoading();
         })
-        .withFailureHandler(e => { alert('Failed to load books: ' + e); hideLoading(); })
+        .withFailureHandler(e => {
+          console.error('Failed to load books:', e);
+          alert('Failed to load books: ' + e);
+          hideLoading();
+          sel.innerHTML = '<option value="">— エラー: 読み込み失敗 —</option>';
+          sel.disabled = false;
+        })
         .getPassageBooks();
     }
 
@@ -1157,14 +1163,17 @@
 
       google.script.run
         .withSuccessHandler(list => {
-          if (book) book.sheets = list.map(n => ({ name: n, passages: [] }));
+          const sheets = list.map(n => ({ name: n, passages: [] }));
+          if (book) book.sheets = sheets;
           saveCache();
-          renderSheetSelect(book.sheets);
+          renderSheetSelect(sheets);
           hideLoading();
         })
         .withFailureHandler(e => {
-          console.error(e);
+          console.error('Failed to load sheets:', e);
           hideLoading();
+          sel.innerHTML = '<option value="">— エラー: 読み込み失敗 —</option>';
+          sel.disabled = false;
         })
         .getSheetsInBook(bookId);
     }
@@ -1210,8 +1219,10 @@
           hideLoading();
         })
         .withFailureHandler(e => {
-          console.error(e);
+          console.error('Failed to load passages:', e);
           hideLoading();
+          sel.innerHTML = '<option value="">— エラー: 読み込み失敗 —</option>';
+          sel.disabled = false;
         })
         .listPassageHeads(bookId, sheetName);
     }
