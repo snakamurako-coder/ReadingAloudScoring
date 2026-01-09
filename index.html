@@ -889,7 +889,15 @@
     async function startMicCheck() {
       try {
         if (micCheckStream) return;
-        micCheckStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micCheckStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 24000, // 希望値
+            echoCancellation: false, // エコーキャンセル無効
+            noiseSuppression: false, // ノイズ抑制無効
+            autoGainControl: false // 自動ゲイン無効
+          }
+        });
         setupMeter(micCheckStream);
         $('status').textContent = 'Microphone Check...';
         $('micCheckStartBtn').disabled = true;
@@ -980,7 +988,15 @@
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 24000, // 希望値
+            echoCancellation: false, // エコーキャンセル無効
+            noiseSuppression: false, // ノイズ抑制無効
+            autoGainControl: false // 自動ゲイン無効
+          }
+        });
         setupMeter(stream);
 
         mediaRecorder = new MediaRecorder(stream);
@@ -1242,13 +1258,12 @@
             .withSuccessHandler(res => {
               isPassageLoaded = true;
 
-              // audio_file列から音声ファイルが指定されている場合
+              // audio_file列から音声ファイルが指定されている場合（拡張子は問わず、ブラウザ/GASが扱えるものを許容）
               if (res.audioFile) {
-                setupShadowingAudio(res.audioFile, '音声ファイル');
+                setupShadowingAudio(resolveAudioSrc(res.audioFile), '音声ファイル');
               } else if (res.isAudioUrl) {
-                // Shadowing Mode (text_displayがURLの場合 - 既存の動作)
-                const dlUrl = res.text.replace(/\/file\/d\/(.+)\/.*/, '/uc?export=download&id=$1');
-                setupShadowingAudio(dlUrl, '音声URL');
+                // text_displayがURLの場合も、そのままorDrive変換で許容
+                setupShadowingAudio(resolveAudioSrc(res.text), '音声URL');
               } else {
                 // Text Mode
                 isShadowingMode = false;
@@ -1300,6 +1315,15 @@
       else $('startBtn').disabled = true;
     }
 
+    // 任意拡張子対応: Google Drive共有URLは直接DLリンクに変換し、それ以外はそのまま使う
+    function resolveAudioSrc(raw) {
+      if (!raw) return '';
+      const s = String(raw).trim();
+      const driveMatch = s.match(/https?:\/\/drive\.google\.com\/file\/d\/([^/]+)\//i);
+      if (driveMatch) return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      return s; // そのまま（mp3/ogg/wav/webm などブラウザ＆GASが返すものを許容）
+    }
+
     // Shadowing Setup Helper
     function setupShadowingAudio(src, label) {
       isShadowingMode = true;
@@ -1322,6 +1346,9 @@
       a.oncanplaythrough = null;
       a.onerror = null;
 
+      // 音源URLを正規化（任意拡張子対応）
+      const normalizedSrc = resolveAudioSrc(src);
+
       // Setup handlers BEFORE causing load
       a.oncanplaythrough = () => {
         isAudioReady = true;
@@ -1341,7 +1368,7 @@
         startBtn.innerHTML = '⚠️ エラー';
       };
 
-      a.src = src;
+      a.src = normalizedSrc;
       a.load();
 
       validateStart();
